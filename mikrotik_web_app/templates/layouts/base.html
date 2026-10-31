@@ -1,0 +1,40 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ISP Dashboard{% endblock %}</title>
+    <!-- 📦 Cargando Tailwind CSS desde tu carpeta local (Sin Internet) -->
+    <script src="{% static 'css/tailwind.min.js' %}"></script>
+    <!-- 📦 Cargando Íconos Lucide desde tu carpeta local (Sin Internet) -->
+    <script src="{% static 'js/lucide.min.js' %}"></script>
+</head>
+<body class="h-full flex overflow-hidden font-sans text-gray-900">
+
+    <!-- Menú Lateral Modular -->
+    {% include 'layouts/_sidebar.html' %}
+
+    <!-- Contenedor de Contenido Principal -->
+    <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+        
+        <!-- Barra Superior Modular -->
+        {% include 'layouts/_navbar.html' %}
+
+        <!-- Espacio Principal Escindible -->
+        <main class="flex-1 relative overflow-y-auto focus:outline-none p-6">
+            <div class="max-w-7xl mx-auto">
+                {% block content %}
+                <!-- El contenido de cada página se inyectará aquí -->
+                {% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <!-- Inicializar iconos automáticamente -->
+    <script>
+        lucide.createIcons();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

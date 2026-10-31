@@ -1,0 +1,17 @@
+<div class="hidden md:flex md:flex-shrink-0 w-64 bg-slate-900 text-slate-300 flex-col h-full">
+    <div class="flex items-center justify-center h-16 px-4 bg-slate-950 text-white font-bold text-lg tracking-wider gap-2">
+        <i data-lucide="router" class="text-indigo-400"></i> ISP MIKROTIK
+    </div>
+    <nav class="flex-1 px-4 py-4 space-y-1">
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white">
+            <i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard
+        </a>
+        <a href="{% url 'clientes_list' %}" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-slate-800 hover:text-white transition">
+            <i data-lucide="users" class="w-5 h-5"></i> Clientes PPPoE
+        </a>
+
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-slate-800 hover:text-white transition">
+            <i data-lucide="activity" class="w-5 h-5"></i> Conexiones Activas
+        </a>
+    </nav>
+</div>
