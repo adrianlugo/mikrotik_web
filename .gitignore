@@ -1,5 +1,8 @@
 
 __pycache__/
-*.pyc
+*.py[cod]
 db.sqlite3
 venv/
+.env
+*.log
+.DS_Store
