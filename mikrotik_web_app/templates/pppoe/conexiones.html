@@ -1,0 +1,18 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}Conexiones activas{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div><h1 class="text-2xl font-bold text-gray-900">Conexiones activas</h1><p class="text-sm text-gray-500">{{ router_nombre }}</p></div>
+    <div class="rounded-lg bg-emerald-50 px-4 py-2 text-emerald-700"><span class="text-2xl font-bold">{{ total_conectados }}</span> conectados</div>
+</div>
+{% if api_error %}<div class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ api_error }}</div>{% endif %}
+<div class="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+    {% for conexion in conexiones %}
+    <div class="flex items-center gap-3 border-b border-gray-100 px-6 py-4 last:border-0">
+        <i data-lucide="user" class="w-5 text-slate-400"></i><span class="font-medium text-gray-700">{{ conexion }}</span><span class="ml-auto rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800">En línea</span>
+    </div>
+    {% empty %}<div class="py-12 text-center text-sm text-gray-400">No hay sesiones PPP activas.</div>{% endfor %}
+</div>
+{% endblock %}

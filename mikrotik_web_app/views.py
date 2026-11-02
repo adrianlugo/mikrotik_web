@@ -1,125 +1,131 @@
-from django.views.generic import TemplateView, View
+from django.contrib import messages
 from django.shortcuts import redirect
-import requests
-import logging
+from django.views.generic import TemplateView, View
 
-logger = logging.getLogger(__name__)
+from .api_client import APIError, MikrotikAPIClient
 
-class DashboardIndexView(TemplateView):
-    template_name = 'pppoe/index.html' 
+
+class APIViewMixin:
+    def api(self):
+        return MikrotikAPIClient()
+
+    def api_error(self, request, exc):
+        messages.error(request, str(exc))
+
+
+class DashboardIndexView(APIViewMixin, TemplateView):
+    template_name = "pppoe/index.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        url_activos = 'http://localhost:8000/api/clientes-pppoe/activos/'  
-        url_planes = 'http://localhost:8000/api/planes/' # <-- Asumiendo que tu endpoint de planes es este
-
-        # 1. Consultar usuarios activos
+        context.update({"planes": [], "routers": [], "conexiones": [], "total_conectados": 0})
+        api = self.api()
         try:
-            response = requests.get(url_activos, timeout=5)
-            if response.status_code == 200:
-                api_data = response.json()
-                context['router_nombre'] = api_data.get('router', 'Desconocido')
-                context['total_conectados'] = api_data.get('total_conectados', 0)
-                context['conexiones'] = api_data.get('conexiones', [])
-                context['api_error'] = False
-            else:
-                context['api_error'] = True
-                context['error_msg'] = "No se pudieron obtener datos del Router."
-        except requests.exceptions.RequestException:
-            context['api_error'] = True
-            context['error_msg'] = "Sin comunicación con el servidor de la API."
-            context['total_conectados'] = 0
-            context['conexiones'] = []
+            active = api.get("clientes-pppoe/activos/")
+            context["router_nombre"] = active.get("router") or active.get("router_nombre") or "Desconocido"
+            context["total_conectados"] = active.get("total_conectados", 0)
+            context["conexiones"] = active.get("conexiones", [])
+        except APIError as exc:
+            context["api_error"] = str(exc)
 
-        # 2.Traer los planes para el desplegable (Select)
-        try:
-            # Si tu endpoint de la API requiere el formato clásico de listado de DRF
-            response_planes = requests.get(url_planes, timeout=5)
-            if response_planes.status_code == 200:
-                context['planes'] = response_planes.json()  # Guarda la lista de planes
-            else:
-                context['planes'] = []
-        except requests.exceptions.RequestException:
-            context['planes'] = []
-
+        for key, path in (("planes", "planes/"), ("routers", "routers/")):
+            try:
+                context[key] = api.get_list(path)
+            except APIError:
+                if key == "routers":
+                    context["routers"] = []
         return context
 
     def post(self, request, *args, **kwargs):
-        """Procesa el envío del formulario para registrar clientes en caliente"""
-        usuario = request.POST.get('usuario')
-        password = request.POST.get('password')
-        plan_raw  = request.POST.get('plan')
-        nombre = request.POST.get('nombre_completo')
-
-        # Convertimos el plan a un número entero seguro para evitar desajustes en la API
         try:
-            plan_id = int(plan_raw) if plan_raw else None
-        except ValueError:
-            plan_id = None
+            router = int(request.POST["router"])
+            plan = int(request.POST["plan"])
+        except (KeyError, TypeError, ValueError):
+            messages.error(request, "Seleccione un router y un plan válidos.")
+            return redirect("dashboard_index")
 
-        # El endpoint de creación de tu proyecto API
-        url_crear = 'http://localhost:8000/api/clientes-pppoe/'
-        
         payload = {
-            "usuario_pppoe": usuario,
-            "password_pppoe": password,
-            "nombre_completo": nombre,
-            "plan": plan_id,          # Debe coincidir con el ID o nombre del Plan en tu BD
-            "router": 1,           # Asumimos que tu CHR es el ID 1 registrado
-            "estado": "activo"
+            "usuario_pppoe": request.POST.get("usuario"),
+            "password_pppoe": request.POST.get("password"),
+            "nombre_completo": request.POST.get("nombre_completo"),
+            "plan": plan,
+            "router": router,
+            "estado": "activo",
         }
-
         try:
-            response = requests.post(url_crear, json=payload, timeout=5)
-            if response.status_code == 201:
-                return redirect('dashboard_index')
-            else:
-                context = self.get_context_data()
-                context['api_error'] = True
-                context['error_msg'] = f"Fallo al registrar en MikroTik: {response.text}"
-                return self.render_to_response(context)
-        except requests.exceptions.RequestException as e:
-            context = self.get_context_data()
-            context['api_error'] = True
-            context['error_msg'] = f"Error de conexión: {str(e)}"
-            return self.render_to_response(context)
+            self.api().post("clientes-pppoe/", payload)
+            messages.success(request, "Cliente PPPoE creado correctamente.")
+        except APIError as exc:
+            self.api_error(request, exc)
+        return redirect("dashboard_index")
 
 
-class SincronizarMikrotikView(View):
+class SincronizarMikrotikView(APIViewMixin, View):
     def post(self, request, *args, **kwargs):
-        """Envía la instrucción POST a la API para importar secretos de Winbox en caliente"""
-        url_importar = 'http://localhost:8000/api/clientes-pppoe/importar-desde-mikrotik/'
-        
         try:
-            response = requests.post(url_importar, timeout=10)
-            # No importa si da éxito o error, recargamos la página principal para refrescar los datos
-            return redirect('dashboard_index')
-        except requests.exceptions.RequestException:
-            return redirect('dashboard_index')
+            self.api().post("clientes-pppoe/importar-desde-mikrotik/")
+            messages.success(request, "Sincronización con MikroTik completada.")
+        except APIError as exc:
+            self.api_error(request, exc)
+        return redirect("dashboard_index")
 
 
-class ClientesListView(TemplateView):
-    template_name = 'pppoe/clientes.html'  # Apunta a la nueva plantilla
+class ClientesListView(APIViewMixin, TemplateView):
+    template_name = "pppoe/clientes.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # 🔗 Consultamos el endpoint de listado completo de clientes
-        url_clientes = 'http://localhost:8000/api/clientes-pppoe/'
-        
         try:
-            response = requests.get(url_clientes, timeout=5)
-            if response.status_code == 200:
-                # La API nos devuelve la lista completa de objetos cliente
-                context['clientes'] = response.json()
-                context['api_error'] = False
-            else:
-                context['api_error'] = True
-                context['error_msg'] = "No se pudo recuperar el listado de clientes desde la API."
-                context['clientes'] = []
-        except requests.exceptions.RequestException:
-            context['api_error'] = True
-            context['error_msg'] = "Error de comunicación con el servidor de la API."
-            context['clientes'] = []
-
+            context["clientes"] = self.api().get_list("clientes-pppoe/")
+        except APIError as exc:
+            context.update(clientes=[], api_error=str(exc))
         return context
+
+
+class PlanesListView(APIViewMixin, TemplateView):
+    template_name = "pppoe/planes.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        try:
+            context["planes"] = self.api().get_list("planes/")
+        except APIError as exc:
+            context.update(planes=[], api_error=str(exc))
+        return context
+
+
+class ConexionActivaView(APIViewMixin, TemplateView):
+    template_name = "pppoe/conexiones.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        try:
+            active = self.api().get("clientes-pppoe/activos/")
+            context.update(
+                conexiones=active.get("conexiones", []),
+                total_conectados=active.get("total_conectados", 0),
+                router_nombre=active.get("router") or active.get("router_nombre") or "Desconocido",
+            )
+        except APIError as exc:
+            context.update(conexiones=[], total_conectados=0, api_error=str(exc))
+        return context
+
+
+class ClienteEstadoView(APIViewMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        try:
+            self.api().post(f"clientes-pppoe/{pk}/cambiar-estado/")
+            messages.success(request, "Estado del cliente actualizado.")
+        except APIError as exc:
+            self.api_error(request, exc)
+        return redirect("clientes_list")
+
+
+class ClienteEliminarView(APIViewMixin, View):
+    def post(self, request, pk, *args, **kwargs):
+        try:
+            self.api().delete(f"clientes-pppoe/{pk}/")
+            messages.success(request, "Cliente eliminado correctamente.")
+        except APIError as exc:
+            self.api_error(request, exc)
+        return redirect("clientes_list")

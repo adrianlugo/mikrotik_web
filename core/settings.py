@@ -125,9 +125,14 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 # Esto le dice a Django que busque archivos estáticos globales si es necesario
-STATICFILES_DIRS = [
-    BASE_DIR / "static",
-]
+STATICFILES_DIRS = []
+
+# Configuración del cliente web para la API REST de MikroTik.
+MIKROTIK_API_URL = os.getenv("MIKROTIK_API_URL", "http://localhost:8000/api").rstrip("/")
+MIKROTIK_API_TIMEOUT = float(os.getenv("MIKROTIK_API_TIMEOUT", "5"))
+MIKROTIK_API_TOKEN = os.getenv("MIKROTIK_API_TOKEN", "")
+MIKROTIK_API_USERNAME = os.getenv("MIKROTIK_API_USERNAME", "")
+MIKROTIK_API_PASSWORD = os.getenv("MIKROTIK_API_PASSWORD", "")
 
 
 # Email

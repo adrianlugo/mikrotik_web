@@ -1,8 +1,19 @@
 from django.urls import path
-from .views import DashboardIndexView, SincronizarMikrotikView, ClientesListView
+
+from .views import (
+    ClienteEliminarView,
+    ClienteEstadoView,
+    ClientesListView,
+    ConexionActivaView,
+    PlanesListView,
+    SincronizarMikrotikView,
+)
 
 urlpatterns = [
-    path('', DashboardIndexView.as_view(), name='dashboard_index'),
-    path('sincronizar/', SincronizarMikrotikView.as_view(), name='sincronizar_mikrotik'), # <-- Nueva ruta
-    path('clientes/', ClientesListView.as_view(), name='clientes_list'),
+    path("clientes/sincronizar/", SincronizarMikrotikView.as_view(), name="sincronizar_mikrotik"),
+    path("clientes/", ClientesListView.as_view(), name="clientes_list"),
+    path("clientes/<int:pk>/estado/", ClienteEstadoView.as_view(), name="cliente_estado"),
+    path("clientes/<int:pk>/eliminar/", ClienteEliminarView.as_view(), name="cliente_eliminar"),
+    path("planes/", PlanesListView.as_view(), name="planes_list"),
+    path("conexiones/", ConexionActivaView.as_view(), name="conexiones_list"),
 ]

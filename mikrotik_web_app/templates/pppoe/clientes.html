@@ -65,12 +65,18 @@
                     </td>
                     <!-- Acciones Operativas Rápidas -->
                     <td class="px-6 py-4 text-right space-x-2">
-                        <button class="text-slate-400 hover:text-indigo-600 transition" title="Editar Credenciales">
-                            <i data-lucide="edit-3" class="w-4 h-4 inline"></i>
-                        </button>
-                        <button class="text-slate-400 hover:text-red-600 transition" title="Dar de Baja / Eliminar">
-                            <i data-lucide="trash-2" class="w-4 h-4 inline"></i>
-                        </button>
+                        <form method="post" action="{% url 'cliente_estado' cliente.id %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-slate-400 hover:text-indigo-600 transition" title="Activar o suspender">
+                                <i data-lucide="power" class="w-4 h-4 inline"></i>
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'cliente_eliminar' cliente.id %}" class="inline" onsubmit="return confirm('¿Eliminar este cliente PPPoE?');">
+                            {% csrf_token %}
+                            <button type="submit" class="text-slate-400 hover:text-red-600 transition" title="Eliminar cliente">
+                                <i data-lucide="trash-2" class="w-4 h-4 inline"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% empty %}
