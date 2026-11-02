@@ -78,6 +78,9 @@ Si la API y la interfaz se ejecutan en puertos distintos, configure `MIKROTIK_AP
 | `/web/clientes/` | Gestión de clientes PPPoE |
 | `/web/planes/` | Consulta de planes de velocidad |
 | `/web/conexiones/` | Sesiones PPP activas |
+| `/web/routers/` | Inventario de routers MikroTik |
+| `/web/interfaces/` | Interfaces reportadas por los routers |
+| `/web/enlaces/` | Estado de enlaces y transporte ISP |
 | `/web/clientes/sincronizar/` | Acción de sincronización con MikroTik |
 
 Las acciones de estado y eliminación se realizan mediante formularios POST protegidos con CSRF.
@@ -93,6 +96,10 @@ La interfaz espera los siguientes recursos REST:
 - `POST /api/clientes-pppoe/{id}/cambiar-estado/`
 - `DELETE /api/clientes-pppoe/{id}/`
 - `GET /api/routers/`
+- `GET /api/interfaces/` (cuando esté disponible en la API)
+- `GET /api/enlaces-isp/` (cuando esté disponible en la API)
+
+Las vistas de infraestructura están diseñadas para seguir funcionando aunque un recurso nuevo aún no exista en el servidor: mostrarán un estado vacío o una advertencia de API en lugar de bloquear el resto del panel.
 
 Las respuestas paginadas de Django REST Framework con la forma `{"results": [...]}` también son admitidas.
 

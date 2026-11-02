@@ -5,12 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ISP Dashboard{% endblock %}</title>
-    <!-- 📦 Cargando Tailwind CSS desde tu carpeta local (Sin Internet) -->
+    <!-- 📦 Cargando Tailwind CSS y estilos de la interfaz desde recursos locales -->
     <script src="{% static 'css/tailwind.min.js' %}"></script>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
     <!-- 📦 Cargando Íconos Lucide desde tu carpeta local (Sin Internet) -->
     <script src="{% static 'js/lucide.min.js' %}"></script>
 </head>
-<body class="h-full flex overflow-hidden font-sans text-gray-900">
+<body class="h-full flex overflow-hidden bg-slate-50 font-sans text-gray-900">
 
     <!-- Menú Lateral Modular -->
     {% include 'layouts/_sidebar.html' %}

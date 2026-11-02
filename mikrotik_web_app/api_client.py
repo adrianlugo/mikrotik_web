@@ -12,7 +12,7 @@ class MikrotikAPIClient:
         self.timeout = settings.MIKROTIK_API_TIMEOUT
         self.headers = {"Accept": "application/json"}
         if settings.MIKROTIK_API_TOKEN:
-            self.headers["Authorization"] = f"Bearer {settings.MIKROTIK_API_TOKEN}"
+            self.headers["Authorization"] = "Bearer " + settings.MIKROTIK_API_TOKEN
 
         self.auth = None
         if settings.MIKROTIK_API_USERNAME and settings.MIKROTIK_API_PASSWORD:
@@ -53,9 +53,13 @@ class MikrotikAPIClient:
 
     def get_list(self, path):
         data = self.request("GET", path)
-        if isinstance(data, dict) and isinstance(data.get("results"), list):
-            return data["results"]
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("results", "items", "data"):
+                if isinstance(data.get(key), list):
+                    return data[key]
+        return []
 
     def get(self, path):
         return self.request("GET", path)

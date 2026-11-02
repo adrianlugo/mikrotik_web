@@ -32,8 +32,10 @@ class DashboardIndexView(APIViewMixin, TemplateView):
             try:
                 context[key] = api.get_list(path)
             except APIError:
-                if key == "routers":
-                    context["routers"] = []
+                context[key] = []
+        context["total_clientes"] = context.get("total_clientes", 0)
+        context["total_plan_count"] = len(context["planes"])
+        context["total_router_count"] = len(context["routers"])
         return context
 
     def post(self, request, *args, **kwargs):
@@ -119,6 +121,42 @@ class ClienteEstadoView(APIViewMixin, View):
         except APIError as exc:
             self.api_error(request, exc)
         return redirect("clientes_list")
+
+
+class RoutersListView(APIViewMixin, TemplateView):
+    template_name = "network/routers.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        try:
+            context["routers"] = self.api().get_list("routers/")
+        except APIError as exc:
+            context.update(routers=[], api_error=str(exc))
+        return context
+
+
+class EnlacesISPListView(APIViewMixin, TemplateView):
+    template_name = "network/enlaces.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        try:
+            context["enlaces"] = self.api().get_list("enlaces-isp/")
+        except APIError as exc:
+            context.update(enlaces=[], api_error=str(exc))
+        return context
+
+
+class InterfacesListView(APIViewMixin, TemplateView):
+    template_name = "network/interfaces.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        try:
+            context["interfaces"] = self.api().get_list("interfaces/")
+        except APIError as exc:
+            context.update(interfaces=[], api_error=str(exc))
+        return context
 
 
 class ClienteEliminarView(APIViewMixin, View):

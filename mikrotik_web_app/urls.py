@@ -5,7 +5,10 @@ from .views import (
     ClienteEstadoView,
     ClientesListView,
     ConexionActivaView,
+    EnlacesISPListView,
+    InterfacesListView,
     PlanesListView,
+    RoutersListView,
     SincronizarMikrotikView,
 )
 
@@ -16,4 +19,7 @@ urlpatterns = [
     path("clientes/<int:pk>/eliminar/", ClienteEliminarView.as_view(), name="cliente_eliminar"),
     path("planes/", PlanesListView.as_view(), name="planes_list"),
     path("conexiones/", ConexionActivaView.as_view(), name="conexiones_list"),
+    path("routers/", RoutersListView.as_view(), name="routers_list"),
+    path("enlaces/", EnlacesISPListView.as_view(), name="enlaces_list"),
+    path("interfaces/", InterfacesListView.as_view(), name="interfaces_list"),
 ]
