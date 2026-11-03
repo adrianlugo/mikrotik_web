@@ -1,0 +1,56 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}{% if form_action == 'editar' %}Editar plan{% else %}Nuevo plan{% endif %}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Planes de velocidad</p>
+    <h1 class="mt-1 text-2xl font-bold text-gray-900">{% if form_action == 'editar' %}Editar plan de internet{% else %}Nuevo plan de internet{% endif %}</h1>
+</div>
+
+{% if api_error %}
+<div class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ api_error }}</div>
+{% endif %}
+
+<div class="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
+    <form method="post" class="grid gap-5 md:grid-cols-2">
+        {% csrf_token %}
+        <label class="text-sm font-medium text-gray-700 md:col-span-2">
+            Nombre exacto del profile PPPoE
+            <input type="text" name="nombre_perfil" required maxlength="100" value="{{ form_data.nombre_perfil }}" placeholder="Plan-10M" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+        </label>
+
+        <label class="text-sm font-medium text-gray-700">
+            Velocidad de subida (Mbps)
+            <input type="number" name="subida_mbps" required min="1" value="{{ form_data.subida_mbps }}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+        </label>
+
+        <label class="text-sm font-medium text-gray-700">
+            Velocidad de descarga (Mbps)
+            <input type="number" name="bajada_mbps" required min="1" value="{{ form_data.bajada_mbps }}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+        </label>
+
+        <label class="text-sm font-medium text-gray-700 md:col-span-2">
+            Cola padre en RouterOS
+            <input type="text" name="cola_padre" maxlength="100" value="{{ form_data.cola_padre }}" placeholder="Plan-10M (opcional)" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+        </label>
+
+        <label class="text-sm font-medium text-gray-700 md:col-span-2">
+            Router MikroTik
+            <select name="router" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Seleccione un router</option>
+                {% for router in routers %}
+                <option value="{{ router.id }}" {% if form_data.router_id == router.id or form_data.router == router.id %}selected{% endif %}>{{ router.nombre|default:router.ip_address }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <div class="flex gap-3 md:col-span-2">
+            <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                {% if form_action == 'editar' %}Guardar cambios{% else %}Crear plan{% endif %}
+            </button>
+            <a href="{% url 'planes_list' %}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancelar</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}{% if tipo == 'leases' %}Leases DHCP{% else %}Consumo del router{% endif %}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between gap-4">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Monitoreo</p>
+        <h1 class="mt-1 text-2xl font-bold text-gray-900">{% if tipo == 'leases' %}Leases DHCP{% else %}Consumo de colas{% endif %}</h1>
+        <p class="mt-1 text-sm text-gray-500">{{ router.nombre }} · {{ router.ip_address }}</p>
+    </div>
+    <a href="{% url 'router_detalle' router_id %}" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Volver al router</a>
+</div>
+
+{% if api_error %}
+<div class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ api_error }}</div>
+{% endif %}
+
+<div class="overflow-x-auto rounded-lg border border-gray-100 bg-white shadow-sm">
+    {% if tipo == 'leases' %}
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left font-semibold text-gray-600">Dirección IP</th><th class="px-4 py-3 text-left font-semibold text-gray-600">MAC</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Servidor</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Estado</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Comentario</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for lease in leases %}
+            <tr><td class="px-4 py-3 font-mono">{{ lease.address|default:'—' }}</td><td class="px-4 py-3 font-mono">{{ lease.mac_address|default:'—' }}</td><td class="px-4 py-3">{{ lease.server|default:'—' }}</td><td class="px-4 py-3">{{ lease.status|default:'—' }}</td><td class="px-4 py-3">{{ lease.comment|default:'—' }}</td></tr>
+            {% empty %}
+            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">No se encontraron leases DHCP.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-slate-50"><tr><th class="px-4 py-3 text-left font-semibold text-gray-600">Cola</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Target / Parent</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Límite</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Tasa</th><th class="px-4 py-3 text-left font-semibold text-gray-600">Estado</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for cola in consumo %}
+            <tr><td class="px-4 py-3 font-semibold text-gray-800">{{ cola.name|default:'—' }}</td><td class="px-4 py-3"><span class="font-mono text-xs">{{ cola.target|default:'—' }}</span><br><span class="text-xs text-gray-500">{{ cola.parent|default:'Sin padre' }}</span></td><td class="px-4 py-3 font-mono text-xs">{{ cola.max_limit|default:'—' }}</td><td class="px-4 py-3 font-mono text-xs">{{ cola.rate|default:'—' }}</td><td class="px-4 py-3">{{ cola.disabled|default:'false' }}</td></tr>
+            {% empty %}
+            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">No se encontraron colas simples.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

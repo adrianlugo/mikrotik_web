@@ -1,0 +1,94 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}Clientes DHCP / IP fija{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Servicios</p>
+        <h1 class="mt-1 text-2xl font-bold text-gray-900">Clientes DHCP / IP fija</h1>
+        <p class="mt-1 text-sm text-gray-500">Reservas DHCP, ARP estático, colas y estado de cada cliente de red.</p>
+    </div>
+    <a href="{% url 'cliente_red_crear' %}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+        <i data-lucide="plus" class="h-4 w-4"></i>
+        Nuevo cliente
+    </a>
+</div>
+
+{% if api_error %}
+<div class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ api_error }}</div>
+{% endif %}
+
+<div class="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left">
+            <thead>
+                <tr class="border-b border-gray-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th class="px-6 py-3">Cliente</th>
+                    <th class="px-6 py-3">Tipo</th>
+                    <th class="px-6 py-3">IP / MAC</th>
+                    <th class="px-6 py-3">Plan / Router</th>
+                    <th class="px-6 py-3">Estado</th>
+                    <th class="px-6 py-3 text-right">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 text-sm text-gray-700">
+                {% for cliente in clientes %}
+                <tr class="transition hover:bg-gray-50/70">
+                    <td class="px-6 py-4 font-medium text-gray-900">{{ cliente.nombre }}</td>
+                    <td class="px-6 py-4">
+                        {% if cliente.tipo == 'dhcp' %}
+                        <span class="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">DHCP</span>
+                        {% else %}
+                        <span class="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">IP fija</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="font-mono text-xs text-indigo-600">{{ cliente.direccion_ip }}</div>
+                        <div class="mt-1 font-mono text-xs text-gray-400">{{ cliente.direccion_mac|default:"Sin MAC" }}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div>{{ cliente.plan_nombre|default:"Sin plan" }}</div>
+                        <div class="mt-1 text-xs text-gray-400">{{ cliente.router_nombre|default:"Sin router" }}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        {% if cliente.estado == 'activo' %}
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Activo
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">
+                            <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span> Suspendido
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <a href="{% url 'cliente_red_editar' cliente.id %}" class="inline-flex p-1 text-slate-400 hover:text-indigo-600" title="Editar cliente">
+                            <i data-lucide="square-pen" class="h-4 w-4"></i>
+                        </a>
+                        <form method="post" action="{% url 'cliente_red_reparar_cola' cliente.id %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1 text-slate-400 hover:text-sky-600" title="Reparar reserva y cola">
+                                <i data-lucide="wrench" class="h-4 w-4"></i>
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'cliente_red_eliminar' cliente.id %}" class="inline" onsubmit="return confirm('¿Eliminar este cliente y sus recursos de red?');">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1 text-slate-400 hover:text-red-600" title="Eliminar cliente">
+                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-sm text-gray-400">
+                        No hay clientes DHCP/IP fija registrados.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
