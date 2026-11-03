@@ -43,7 +43,9 @@
 
     <!-- Inicializar iconos automáticamente -->
     <script>
-        lucide.createIcons();
+        if (window.lucide) {
+            lucide.createIcons();
+        }
     </script>
     {% block extra_js %}{% endblock %}
 </body>

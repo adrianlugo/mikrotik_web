@@ -5,10 +5,17 @@
     <div class="flex items-center gap-4">
         <!-- Indicador visual del modo simulación / producción -->
         <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-            <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span> Simulado
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+            {% if request.session.mikrotik_api_role %}{{ request.session.mikrotik_api_role }}{% else %}API conectada{% endif %}
         </span>
-        <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-sm">
-            AD
-        </div>
+        {% if request.session.mikrotik_api_username %}
+        <span class="hidden text-sm font-medium text-slate-600 sm:block">{{ request.session.mikrotik_api_username }}</span>
+        {% endif %}
+        <form method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50" title="Cerrar sesión">
+                Salir
+            </button>
+        </form>
     </div>
 </header>
