@@ -11,42 +11,71 @@
     <!-- 📦 Cargando Íconos Lucide desde tu carpeta local (Sin Internet) -->
     <script src="{% static 'js/lucide.min.js' %}"></script>
 </head>
-<body class="h-full flex overflow-hidden bg-slate-50 font-sans text-gray-900">
-
-    <!-- Menú Lateral Modular -->
-    {% include 'layouts/_sidebar.html' %}
-
-    <!-- Contenedor de Contenido Principal -->
-    <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+<body class="h-screen bg-slate-50 font-sans text-gray-900 antialiased overflow-hidden">
+    
+    <!-- 🗂️ Contenedor Principal Completo -->
+    <div class="flex h-full w-full overflow-hidden">
         
-        <!-- Barra Superior Modular -->
-        {% include 'layouts/_navbar.html' %}
-
-        <!-- Espacio Principal Escindible -->
-        <main class="flex-1 relative overflow-y-auto focus:outline-none p-6">
-            <div class="max-w-7xl mx-auto">
-                {% if messages %}
-                    <div class="mb-4 space-y-2">
+        <!-- 1. El Menú Lateral (Corregida la ruta para apuntar a sidebar.html) -->
+        {% include 'layouts/_sidebar.html' %}
+        
+        <!-- 2. Área de Contenido Principal (Crece al 100% si el sidebar se oculta) -->
+        <div class="flex flex-col flex-1 w-full h-full overflow-hidden">
+            
+            <!-- Barra Superior Modular (Corregida la ruta para apuntar a navbar.html) -->
+            {% include 'layouts/_navbar.html' %}
+            
+            <!-- Espacio Principal Escindible con scroll independiente -->
+            <main class="flex-1 relative overflow-y-auto p-6 focus:outline-none">
+                <div class="max-w-7xl mx-auto">
+                    {% if messages %}
+                        <div class="mb-4 space-y-2">
                         {% for message in messages %}
-                            <div class="rounded-md border px-4 py-3 text-sm {% if message.tags == 'error' %}border-red-200 bg-red-50 text-red-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
+                            <div class="rounded-md border px-4 py-3 text-sm {% if message.tags == 'error' %}bg-red-50 border-red-200 text-red-700{% else %}bg-emerald-50 border-emerald-200 text-emerald-700{% endif %}">
                                 {{ message }}
                             </div>
                         {% endfor %}
-                    </div>
-                {% endif %}
-                {% block content %}
-                <!-- El contenido de cada página se inyectará aquí -->
-                {% endblock %}
-            </div>
-        </main>
-    </div>
+                        </div>
+                    {% endif %}
 
-    <!-- Inicializar iconos automáticamente -->
+                    {% block content %}
+                    <!-- El contenido de cada página se inyectará aquí -->
+                    {% endblock %}
+                </div>
+            </main>
+        </div>
+    </div>
+    <!-- 📦 Cargando la librería local -->
+    <script src="{% static 'js/lucide.min.js' %}"></script>    
+        <!-- Script responsivo corregido contra bloqueos de redimensionamiento -->
     <script>
-        if (window.lucide) {
-            lucide.createIcons();
-        }
+        document.addEventListener("DOMContentLoaded", function() {
+            // Forzar el renderizado de los iconos de Lucide
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+            
+            const sidebar = document.getElementById("sidebar");
+            const openBtn = document.getElementById("open-sidebar");
+            const closeBtn = document.getElementById("close-sidebar");
+
+            // Abre el sidebar (Remueve la clase que lo saca de la pantalla)
+            if (openBtn && sidebar) {
+                openBtn.addEventListener("click", function() {
+                    sidebar.classList.remove("-translate-x-full");
+                });
+            }
+
+            // Cierra el sidebar (Añade la clase que lo saca de la pantalla)
+            if (closeBtn && sidebar) {
+                closeBtn.addEventListener("click", function() {
+                    sidebar.classList.add("-translate-x-full");
+                });
+            }
+        });
     </script>
+
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

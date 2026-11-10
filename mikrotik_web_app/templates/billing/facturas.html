@@ -1,0 +1,92 @@
+{% extends 'layouts/base.html' %}
+
+{% block title %}Facturas{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Facturación</p>
+        <h1 class="mt-1 text-2xl font-bold text-gray-900">Facturas</h1>
+        <p class="mt-1 text-sm text-gray-500">Estado de cobranza, vencimientos y saldo de cada cliente.</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="{% url 'pagos_list' %}" class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+            Ver pagos
+        </a>
+        <a href="{% url 'factura_crear' %}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+            <i data-lucide="plus" class="h-4 w-4"></i>
+            Nueva factura
+        </a>
+    </div>
+</div>
+
+{% if api_error %}
+<div class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ api_error }}</div>
+{% endif %}
+
+<div class="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-left">
+            <thead>
+                <tr class="border-b border-gray-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th class="px-6 py-3">Factura / Cliente</th>
+                    <th class="px-6 py-3">Período</th>
+                    <th class="px-6 py-3">Vencimiento</th>
+                    <th class="px-6 py-3">Monto / Pagado</th>
+                    <th class="px-6 py-3">Saldo</th>
+                    <th class="px-6 py-3">Estado</th>
+                    <th class="px-6 py-3 text-right">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 text-sm text-gray-700">
+                {% for factura in facturas %}
+                <tr class="transition hover:bg-gray-50/70">
+                    <td class="px-6 py-4">
+                        <div class="font-medium text-gray-900">Factura #{{ factura.id }}</div>
+                        <div class="mt-1 text-xs text-gray-500">{{ factura.cliente_nombre }}</div>
+                    </td>
+                    <td class="px-6 py-4 font-mono text-xs text-gray-600">{{ factura.periodo }}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-gray-600">{{ factura.fecha_vencimiento }}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-semibold text-gray-900">{{ factura.monto_mostrado }}</div>
+                        <div class="mt-1 text-xs text-emerald-600">Pagado: {{ factura.pagado_mostrado }}</div>
+                    </td>
+                    <td class="px-6 py-4 font-semibold text-gray-900">{{ factura.saldo_mostrado }}</td>
+                    <td class="px-6 py-4">
+                        {% if factura.estado == 'pagada' %}
+                        <span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">Pagada</span>
+                        {% elif factura.estado == 'vencida' %}
+                        <span class="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">Vencida</span>
+                        {% elif factura.estado == 'anulada' %}
+                        <span class="inline-flex rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium text-gray-700">Anulada</span>
+                        {% else %}
+                        <span class="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">Pendiente</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        {% if factura.estado != 'anulada' %}
+                        <a href="{% url 'pago_crear' %}?factura={{ factura.id }}" class="inline-flex p-1 text-slate-400 hover:text-emerald-600" title="Registrar pago">
+                            <i data-lucide="circle-dollar-sign" class="h-4 w-4"></i>
+                        </a>
+                        {% endif %}
+                        <a href="{% url 'factura_editar' factura.id %}" class="inline-flex p-1 text-slate-400 hover:text-indigo-600" title="Editar factura">
+                            <i data-lucide="square-pen" class="h-4 w-4"></i>
+                        </a>
+                        <form method="post" action="{% url 'factura_eliminar' factura.id %}" class="inline" onsubmit="return confirm('¿Eliminar esta factura? Solo procede si la API permite conservar la integridad de los datos.');">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1 text-slate-400 hover:text-red-600" title="Eliminar factura">
+                                <i data-lucide="trash-2" class="h-4 w-4"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-400">No hay facturas registradas.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

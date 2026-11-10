@@ -64,61 +64,10 @@
     </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Formulario de Alta Rápida -->
-    <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 h-fit">
-        <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2">
-            <i data-lucide="user-plus" class="w-5 h-5 text-indigo-500"></i>
-            Alta de Cliente PPPoE
-        </h3>
-        <form method="POST" class="space-y-4">
-            {% csrf_token %}
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase">Nombre Completo</label>
-                <input type="text" name="nombre_completo" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase">Usuario PPPoE</label>
-                <input type="text" name="usuario" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase">Contraseña PPPoE</label>
-                <input type="password" name="password" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
-            </div>
-            
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Router MikroTik</label>
-                <select name="router" required class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none text-gray-700">
-                    <option value="" disabled selected>-- Selecciona un router --</option>
-                    {% for router in routers %}
-                        <option value="{{ router.id }}">{{ router.nombre|default:router.ip_address|default:router.ip }}</option>
-                    {% empty %}
-                        <option value="" disabled>No se encontraron routers en la API</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Plan de Internet contratado</label>
-                <select name="plan" required class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none text-gray-700">
-                    <option value="" disabled selected>-- Selecciona un plan --</option>
-
-                    {% for plan in planes %}
-                        <option value="{{ plan.id }}">{{ plan.display_name }}{% if plan.subida_mbps and plan.bajada_mbps %} · {{ plan.subida_mbps }}/{{ plan.bajada_mbps }} Mbps{% endif %}</option>
-                    {% empty %}
-                        <option value="" disabled>No hay planes creados en el sistema</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <button type="submit" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-md transition text-sm flex items-center justify-center gap-2 shadow-sm">
-                <i data-lucide="save" class="w-4 h-4"></i> Crear
-            </button>
-        </form>
-    </div>
-
+<div class="w-full">
+    
     <!-- Tabla / Lista de Conexiones Activas -->
-    <div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden lg:col-span-2">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden w-full">
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h3 class="font-bold text-gray-800 flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>

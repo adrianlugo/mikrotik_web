@@ -1,4 +1,15 @@
 <header class="flex items-center justify-between h-16 bg-white border-b border-gray-200 px-6">
+
+    <!-- Usamos un style CSS limpio para ocultarlo solo si la pantalla mide más de 1024px (pantallas grandes) -->
+    <button id="open-sidebar" style="display: flex;" class="p-2 mr-3 rounded-md text-gray-600 hover:bg-gray-100 items-center justify-center lg:hidden">
+        <style>
+            @media (min-width: 1024px) { #open-sidebar { display: none !important; } }
+        </style>
+        <i data-lucide="menu" class="w-6 h-6"></i>
+    </button>
+
+
+
     <div class="text-sm font-medium text-gray-500">
         Bienvenido al panel del administrador
     </div>
