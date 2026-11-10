@@ -25,6 +25,7 @@ class MikrotikAPIClient:
         return f"{self.base_url}/{path.lstrip('/')}"
 
     def request(self, method, path, **kwargs):
+        # 1. Intentar autenticar preventivamente si hay credenciales y no hay token
         if (
             "Authorization" not in self.headers
             and self.username
@@ -33,6 +34,7 @@ class MikrotikAPIClient:
         ):
             self._authenticate()
 
+        # 2. Ejecutar la petición
         try:
             response = requests.request(
                 method,
@@ -44,6 +46,21 @@ class MikrotikAPIClient:
         except requests.RequestException as exc:
             raise APIError(f"No se pudo conectar con la API: {exc}") from exc
 
+        # 3. REINTENTO AUTOMÁTICO: Si da 401 (Unauthorized) y tenemos credenciales, reautenticar una vez
+        if response.status_code == 401 and self.username and self.password and not self._authentication_attempted:
+            self._authenticate()
+            try:
+                response = requests.request(
+                    method,
+                    self._url(path),
+                    headers=self.headers,
+                    timeout=self.timeout,
+                    **kwargs,
+                )
+            except requests.RequestException as exc:
+                raise APIError(f"No se pudo conectar con la API tras reautenticar: {exc}") from exc
+
+        # 4. Manejo de errores HTTP
         if response.status_code >= 400:
             try:
                 detail = response.json()
@@ -56,6 +73,7 @@ class MikrotikAPIClient:
 
         if response.status_code == 204:
             return None
+            
         try:
             return response.json()
         except ValueError as exc:
