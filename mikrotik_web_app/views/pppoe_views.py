@@ -1,8 +1,8 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
-from ..mixins import AuthenticatedAPIViewMixin, PlanFormMixin, APIViewMixin
-from ..utils import _decimal, _related_id, _related_form_id, _pppoe_payload
+from ..mixins import AuthenticatedAPIViewMixin, PlanFormMixin
+from ..utils import _related_id, _pppoe_payload
 
 
 class ClientesListView(AuthenticatedAPIViewMixin, TemplateView):
