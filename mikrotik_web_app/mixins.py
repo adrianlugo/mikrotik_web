@@ -1,8 +1,10 @@
+from datetime import date
+
 from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
 from .api_client import MikrotikAPIClient
-from .utils import clear_api_session, _related_id, _related_form_id
+from .utils import _decimal, clear_api_session, _related_id, _related_form_id
 
 
 class APIViewMixin:
@@ -89,24 +91,24 @@ class PlanFormMixin(APIViewMixin):
         return normalized
 
     def build_payload(self, data):
+        # Limpieza básica de texto
         nombre = data.get("nombre_perfil", "").strip()
         cola_padre = data.get("cola_padre", "").strip()
+        
         if not nombre:
             raise ValueError("Ingrese el nombre del perfil PPPoE.")
 
+        # Conversiones básicas de tipos para que la API reciba lo que espera
         try:
-            router = int(data["router"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Seleccione un router válido.") from None
+            router = int(data["router"]) if data.get("router") else None
+        except (TypeError, ValueError):
+            router = None
 
         try:
-            subida = int(data["subida_mbps"])
-            bajada = int(data["bajada_mbps"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Ingrese las velocidades de subida y bajada.") from None
-
-        if subida <= 0 or bajada <= 0:
-            raise ValueError("Las velocidades deben ser mayores que cero.")
+            subida = int(data["subida_mbps"]) if data.get("subida_mbps") else 0
+            bajada = int(data["bajada_mbps"]) if data.get("bajada_mbps") else 0
+        except (TypeError, ValueError):
+            subida, bajada = 0, 0
 
         return {
             "nombre_perfil": nombre,
@@ -143,16 +145,11 @@ class RouterFormMixin(APIViewMixin):
             raise ValueError("Ingrese el nombre del router.")
         if not ip_address:
             raise ValueError("Ingrese la dirección IP del router.")
-        if not usuario:
-            raise ValueError("Ingrese el usuario API.")
+
         try:
-            puerto_api = int(data.get("puerto_api", 8728))
+            puerto_api = int(data.get("puerto_api", 8728)) if data.get("puerto_api") else 8728
         except (TypeError, ValueError):
-            raise ValueError("Ingrese un puerto API válido.") from None
-        if puerto_api <= 0:
-            raise ValueError("El puerto API debe ser mayor que cero.")
-        if not partial and not password:
-            raise ValueError("Ingrese la contraseña API.")
+            puerto_api = 8728
 
         payload = {
             "nombre": nombre,
@@ -220,3 +217,104 @@ class ClienteRedFormMixin:
                 router=int(data["router"]),
             )
         return payload
+
+class FacturaFormMixin(APIViewMixin):
+    estados = (
+        ("pendiente", "Pendiente"),
+        ("pagada", "Pagada"),
+        ("vencida", "Vencida"),
+        ("anulada", "Anulada"),
+    )
+
+    def get_clientes(self, api):
+        clientes = api.get_list("clientes-pppoe/")
+        normalized = []
+        for cliente in clientes:
+            item = dict(cliente)
+            item["display_name"] = next(
+                (
+                    item[key]
+                    for key in ("nombre_completo", "nombre", "usuario_pppoe")
+                    if item.get(key) not in (None, "")
+                ),
+                f"Cliente #{item.get('id')}",
+            )
+            normalized.append(item)
+        return normalized
+
+    def normalize_factura_form_data(self, data):
+        normalized = dict(data)
+        normalized["cliente_id"] = _related_id(data.get("cliente"))
+        return normalized
+
+    def build_payload(self, data):
+        try:
+            cliente_id = int(data["cliente"]) if data.get("cliente") else None
+        except (TypeError, ValueError):
+            raise ValueError("Seleccione un cliente válido.") from None
+
+        monto = _decimal(data.get("monto", 0))
+
+        return {
+            "cliente": cliente_id,
+            "periodo": data.get("periodo"),
+            "monto": f"{monto:.2f}",
+            "fecha_vencimiento": data.get("fecha_vencimiento"),
+            "estado": data.get("estado", "pendiente"),
+            "observaciones": data.get("observaciones", "").strip(),
+        }
+
+class PagoFormMixin(APIViewMixin):
+    metodos = (
+        ("efectivo", "Efectivo"),
+        ("transferencia", "Transferencia"),
+        ("tarjeta", "Tarjeta"),
+        ("otro", "Otro"),
+    )
+
+    def get_facturas(self, api):
+        facturas = api.get_list("facturas/")
+        normalized = []
+        for factura in facturas:
+            item = dict(factura)
+            client_name = item.get("cliente_nombre")
+            item["display_label"] = (
+                f"Factura #{item.get('id')} - {client_name}"
+                if client_name
+                else f"Factura #{item.get('id')}"
+            )
+            normalized.append(item)
+        return normalized
+
+    def normalize_pago_form_data(self, data):
+        normalized = dict(data)
+        normalized["factura_id"] = _related_id(data.get("factura"))
+        return normalized
+
+    def build_payload(self, data):
+        try:
+            factura_id = int(data["factura"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Seleccione una factura válida.") from None
+
+        try:
+            monto = _decimal(data["monto"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Ingrese un monto válido.") from None
+        if monto <= 0:
+            raise ValueError("El monto debe ser mayor que cero.")
+
+        metodo = data.get("metodo", "")
+        if metodo not in {value for value, _label in self.metodos}:
+            raise ValueError("Seleccione un método de pago válido.")
+
+        referencia = data.get("referencia", "").strip()
+        if len(referencia) > 100:
+            raise ValueError("La referencia no puede superar 100 caracteres.")
+
+        return {
+            "factura": factura_id,
+            "monto": f"{monto:.2f}",
+            "metodo": metodo,
+            "referencia": referencia,
+        }

@@ -63,11 +63,29 @@ class MikrotikAPIClient:
         # 4. Manejo de errores HTTP
         if response.status_code >= 400:
             try:
-                detail = response.json()
+                error_data = response.json()
             except ValueError:
-                detail = response.text.strip() or response.reason
+                error_data = response.text.strip() or response.reason
+
+            # Si la API devuelve un diccionario de errores (ej. por campos)
+            if isinstance(error_data, dict):
+                mensajes = []
+                for campo, errs in error_data.items():
+                    if isinstance(errs, list):
+                        err_str = " ".join(str(e) for e in errs)
+                    else:
+                        err_str = str(errs)
+                    # Si la clave es 'detail', lo mostramos directo; si no, indicamos el campo
+                    if campo == "detail":
+                        mensajes.append(err_str)
+                    else:
+                        mensajes.append(f"{campo}: {err_str}")
+                detail = " | ".join(mensajes) if mensajes else str(error_data)
+            else:
+                detail = str(error_data)
+
             raise APIError(
-                f"La API respondió {response.status_code}: {detail}",
+                detail,  # Devolvemos directamente el texto limpio sin el "La API respondió 400:"
                 status_code=response.status_code,
             )
 
