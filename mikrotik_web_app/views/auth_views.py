@@ -23,7 +23,15 @@ class LoginView(APIViewMixin, TemplateView):
         try:
             response = self.api(request=request).login(username, password)
         except Exception as exc:
-            self.api_error(request, exc)
+            # Intentamos extraer el mensaje real del error de la API
+            error_msg = str(exc)
+            
+            if "Unable to log in with provided credentials" in error_msg or "400" in error_msg:
+                user_message = "El usuario o la contraseña son incorrectos."
+            else:
+                user_message = "No se pudo conectar con el servidor de la API."
+                
+            messages.error(request, user_message)
             return redirect("login")
 
         token = response.get("token") or response.get("key")

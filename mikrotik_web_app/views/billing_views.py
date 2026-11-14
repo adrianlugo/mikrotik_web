@@ -1,9 +1,8 @@
-from datetime import date
 from decimal import Decimal
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
-from ..mixins import AuthenticatedAPIViewMixin, APIViewMixin
+from ..mixins import AuthenticatedAPIViewMixin, FacturaFormMixin, PagoFormMixin
 from ..utils import _decimal, _related_id, _related_form_id
 
 
@@ -69,73 +68,6 @@ class FacturaListView(AuthenticatedAPIViewMixin, TemplateView):
         if api_errors:
             context["api_error"] = " ".join(api_errors)
         return context
-
-
-class FacturaFormMixin(APIViewMixin):
-    estados = (
-        ("pendiente", "Pendiente"),
-        ("pagada", "Pagada"),
-        ("vencida", "Vencida"),
-        ("anulada", "Anulada"),
-    )
-
-    def get_clientes(self, api):
-        clientes = api.get_list("clientes-pppoe/")
-        normalized = []
-        for cliente in clientes:
-            item = dict(cliente)
-            item["display_name"] = next(
-                (
-                    item[key]
-                    for key in ("nombre_completo", "nombre", "usuario_pppoe")
-                    if item.get(key) not in (None, "")
-                ),
-                f"Cliente #{item.get('id')}",
-            )
-            normalized.append(item)
-        return normalized
-
-    def normalize_factura_form_data(self, data):
-        normalized = dict(data)
-        normalized["cliente_id"] = _related_id(data.get("cliente"))
-        return normalized
-
-    def build_payload(self, data):
-        try:
-            cliente_id = int(data["cliente"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Seleccione un cliente PPPoE válido.") from None
-
-        try:
-            monto = _decimal(data["monto"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Ingrese un monto válido.") from None
-        if monto <= 0:
-            raise ValueError("El monto debe ser mayor que cero.")
-
-        try:
-            periodo = date.fromisoformat(data["periodo"])
-            periodo = periodo.replace(day=1)
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Ingrese un período válido.") from None
-
-        try:
-            fecha_vencimiento = date.fromisoformat(data["fecha_vencimiento"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Ingrese una fecha de vencimiento válida.") from None
-
-        estado = data.get("estado", "pendiente")
-        if estado not in {value for value, _label in self.estados}:
-            raise ValueError("Seleccione un estado válido.")
-
-        return {
-            "cliente": cliente_id,
-            "periodo": periodo.isoformat(),
-            "monto": f"{monto:.2f}",
-            "fecha_vencimiento": fecha_vencimiento.isoformat(),
-            "estado": estado,
-            "observaciones": data.get("observaciones", "").strip(),
-        }
 
 
 class FacturaCrearView(FacturaFormMixin, AuthenticatedAPIViewMixin, TemplateView):
@@ -278,60 +210,7 @@ class PagoListView(AuthenticatedAPIViewMixin, TemplateView):
         return context
 
 
-class PagoFormMixin(APIViewMixin):
-    metodos = (
-        ("efectivo", "Efectivo"),
-        ("transferencia", "Transferencia"),
-        ("tarjeta", "Tarjeta"),
-        ("otro", "Otro"),
-    )
 
-    def get_facturas(self, api):
-        facturas = api.get_list("facturas/")
-        normalized = []
-        for factura in facturas:
-            item = dict(factura)
-            client_name = item.get("cliente_nombre")
-            item["display_label"] = (
-                f"Factura #{item.get('id')} - {client_name}"
-                if client_name
-                else f"Factura #{item.get('id')}"
-            )
-            normalized.append(item)
-        return normalized
-
-    def normalize_pago_form_data(self, data):
-        normalized = dict(data)
-        normalized["factura_id"] = _related_id(data.get("factura"))
-        return normalized
-
-    def build_payload(self, data):
-        try:
-            factura_id = int(data["factura"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Seleccione una factura válida.") from None
-
-        try:
-            monto = _decimal(data["monto"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Ingrese un monto válido.") from None
-        if monto <= 0:
-            raise ValueError("El monto debe ser mayor que cero.")
-
-        metodo = data.get("metodo", "")
-        if metodo not in {value for value, _label in self.metodos}:
-            raise ValueError("Seleccione un método de pago válido.")
-
-        referencia = data.get("referencia", "").strip()
-        if len(referencia) > 100:
-            raise ValueError("La referencia no puede superar 100 caracteres.")
-
-        return {
-            "factura": factura_id,
-            "monto": f"{monto:.2f}",
-            "metodo": metodo,
-            "referencia": referencia,
-        }
 
 
 class PagoCrearView(PagoFormMixin, AuthenticatedAPIViewMixin, TemplateView):
