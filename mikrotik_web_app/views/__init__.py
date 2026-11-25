@@ -41,8 +41,6 @@ from .network_views import (
     ClienteRedEditarView,
     ClienteRedRepararColaView,
     ClienteRedEliminarView,
-    EnlacesISPListView,
-    InterfacesListView,
 )
 
 from .billing_views import (

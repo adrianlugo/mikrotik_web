@@ -232,11 +232,11 @@ class ClienteEditarView(AuthenticatedAPIViewMixin, TemplateView):
         try:
             planes = self.normalize_plans(self.api().get_list("planes/"))
             payload = _pppoe_payload(request.POST, plans=planes, require_password=False)
-        except Exception as exc:
-            self.api_error(request, exc)
-            return redirect("cliente_editar", pk=pk)
         except ValueError as exc:
             messages.error(request, str(exc))
+            return redirect("cliente_editar", pk=pk)
+        except Exception as exc:
+            self.api_error(request, exc)
             return redirect("cliente_editar", pk=pk)
 
         password = request.POST.get("password_pppoe", "").strip()

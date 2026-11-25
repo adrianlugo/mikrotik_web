@@ -16,7 +16,7 @@ class RouterViewsTestCase(TestCase):
             "id": 4,
             "nombre": "CHR Principal",
             "ip_address": "192.168.88.1",
-            "puerto_api": 8728,
+            "puerto_api": 8729,
             "usuario": "api",
             "activo": True,
         }
@@ -36,7 +36,7 @@ class RouterViewsTestCase(TestCase):
             {
                 "nombre": "CHR Sucursal",
                 "ip_address": "192.168.88.2",
-                "puerto_api": "8728",
+                "puerto_api": "8729",
                 "usuario": "api_sucursal",
                 "password": "secreto-api",
                 "activo": "on",
@@ -49,7 +49,7 @@ class RouterViewsTestCase(TestCase):
             {
                 "nombre": "CHR Sucursal",
                 "ip_address": "192.168.88.2",
-                "puerto_api": 8728,
+                "puerto_api": 8729,
                 "usuario": "api_sucursal",
                 "activo": True,
                 "password": "secreto-api",
@@ -63,7 +63,7 @@ class RouterViewsTestCase(TestCase):
             {
                 "nombre": "CHR Principal",
                 "ip_address": "192.168.88.1",
-                "puerto_api": "8728",
+                "puerto_api": "8729",
                 "usuario": "api",
                 "password": "",
                 "activo": "on",
@@ -76,7 +76,7 @@ class RouterViewsTestCase(TestCase):
             {
                 "nombre": "CHR Principal",
                 "ip_address": "192.168.88.1",
-                "puerto_api": 8728,
+                "puerto_api": 8729,
                 "usuario": "api",
                 "activo": True,
             },
@@ -88,7 +88,7 @@ class RouterViewsTestCase(TestCase):
             "id": 4,
             "nombre": "CHR Inactivo",
             "ip_address": "192.168.88.3",
-            "puerto_api": 8728,
+            "puerto_api": 8729,
             "usuario": "api",
             "activo": False,
         }

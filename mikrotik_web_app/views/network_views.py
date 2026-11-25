@@ -103,29 +103,3 @@ class ClienteRedEliminarView(AuthenticatedAPIViewMixin, View):
         except Exception as exc:
             self.api_error(request, exc)
         return redirect("clientes_red_list")
-
-
-class EnlacesISPListView(AuthenticatedAPIViewMixin, TemplateView):
-    template_name = "network/enlaces.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        try:
-            context["enlaces"] = self.api().get_list("enlaces-isp/")
-        except Exception as exc:
-            context.update(enlaces=[], api_error=str(exc))
-            self.api_error(self.request, exc)
-        return context
-
-
-class InterfacesListView(AuthenticatedAPIViewMixin, TemplateView):
-    template_name = "network/interfaces.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        try:
-            context["interfaces"] = self.api().get_list("interfaces/")
-        except Exception as exc:
-            context.update(interfaces=[], api_error=str(exc))
-            self.api_error(self.request, exc)
-        return context
