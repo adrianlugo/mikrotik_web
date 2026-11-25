@@ -11,7 +11,11 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import warnings
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,13 +24,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-3jlm8qks07b$t8by&s^6dsp*2raffx05hr$6tf54an4@!uria='
+# La configuración sensible vive en variables de entorno (ver .env.example).
+# Nunca escribas claves reales en este archivo ni en el repositorio.
+# La clave anterior, que estaba escrita en este archivo, debe rotarse:
+# ya está en el historial de Git y hay que considerarla expuesta.
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# DEBUG por defecto es False: en producción nunca debe activarse.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
 
-ALLOWED_HOSTS = []
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if DEBUG:
+        warnings.warn(
+            'DJANGO_SECRET_KEY no está definida: se usa una clave efímera '
+            'generada al azar, solo válida para desarrollo. Las sesiones '
+            'dejarán de ser válidas al reiniciar. Define DJANGO_SECRET_KEY '
+            'en el entorno (ver .env.example).'
+        )
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY no está definida. Genera una con: python -c '
+            '"from django.core.management.utils import get_random_secret_key; '
+            'print(get_random_secret_key())" y definela en el entorno.'
+        )
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+    if host.strip()
+]
+if DEBUG and not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition

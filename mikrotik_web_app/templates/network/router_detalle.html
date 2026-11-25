@@ -7,7 +7,7 @@
     <div>
         <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Infraestructura</p>
         <h1 class="mt-1 text-2xl font-bold text-gray-900">{{ router.nombre|default:"Router MikroTik" }}</h1>
-        <p class="mt-1 font-mono text-sm text-gray-500">{{ router.ip_address }}:{{ router.puerto_api|default:'8728' }}</p>
+        <p class="mt-1 font-mono text-sm text-gray-500">{{ router.ip_address }}:{{ router.puerto_api|default:'8729' }}</p>
     </div>
     <div class="flex flex-wrap gap-2">
         <a href="{% url 'router_editar' router_id %}" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Editar</a>

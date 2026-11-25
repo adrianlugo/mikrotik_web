@@ -65,7 +65,7 @@ class APIViewMixin:
         return MikrotikAPIClient(token=token)
 
     def api_error(self, request, exc):
-        if exc.status_code == 401:
+        if getattr(exc, "status_code", None) == 401:
             clear_api_session(request)
         messages.error(request, str(exc))
 
@@ -131,7 +131,7 @@ class RouterFormMixin(APIViewMixin):
             "1",
             1,
         )
-        normalized["puerto_api"] = normalized.get("puerto_api") or 8728
+        normalized["puerto_api"] = normalized.get("puerto_api") or 8729
         return normalized
 
     def build_payload(self, data, partial=False):
@@ -147,9 +147,9 @@ class RouterFormMixin(APIViewMixin):
             raise ValueError("Ingrese la dirección IP del router.")
 
         try:
-            puerto_api = int(data.get("puerto_api", 8728)) if data.get("puerto_api") else 8728
+            puerto_api = int(data.get("puerto_api", 8729)) if data.get("puerto_api") else 8729
         except (TypeError, ValueError):
-            puerto_api = 8728
+            puerto_api = 8729
 
         payload = {
             "nombre": nombre,

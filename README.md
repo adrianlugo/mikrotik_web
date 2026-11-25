@@ -42,11 +42,16 @@ core/
 py -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+copy .env.example .env
+# En el .env, genera y pon una DJANGO_SECRET_KEY nueva (ver Configuración)
 python manage.py migrate
-python manage.py runserver
+python manage.py runserver 8001
 ```
 
-Abra `http://127.0.0.1:8000/`.
+Abra `http://127.0.0.1:8001/`.
+
+La API corre en el puerto 8000 y la web en el 8001: no pueden correr las dos
+en el mismo puerto en la misma máquina.
 
 ## Configuración
 
@@ -64,6 +69,9 @@ $env:MIKROTIK_API_PASSWORD="clave"
 
 | Variable | Valor predeterminado | Uso |
 |---|---|---|
+| `DJANGO_SECRET_KEY` | (sin valor) | Clave secreta de Django. Obligatoria en producción; sin ella la app no arranca con `DEBUG=false`. La clave anterior, que estaba escrita en `settings.py`, debe rotarse: ya está en el historial de Git y hay que considerarla expuesta. Se genera con `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` |
+| `DJANGO_DEBUG` | `false` | Activa el modo depuración. Solo `true` en desarrollo local |
+| `DJANGO_ALLOWED_HOSTS` | (vacío; en desarrollo, `127.0.0.1,localhost`) | Dominios permitidos, separados por comas |
 | `MIKROTIK_API_URL` | `http://localhost:8000/api` | Base de la API REST |
 | `MIKROTIK_API_TIMEOUT` | `5` | Tiempo máximo por petición, en segundos |
 | `MIKROTIK_API_TOKEN` | vacío | Token DRF para autenticación `Token ...` |
@@ -86,8 +94,6 @@ Si la API y la interfaz se ejecutan en puertos distintos, configure `MIKROTIK_AP
 | `/web/planes/` | Consulta de planes de velocidad |
 | `/web/conexiones/` | Sesiones PPP activas |
 | `/web/routers/` | Inventario de routers MikroTik |
-| `/web/interfaces/` | Interfaces reportadas por los routers |
-| `/web/enlaces/` | Estado de enlaces y transporte ISP |
 | `/web/clientes/sincronizar/` | Acción de sincronización con MikroTik |
 
 Las acciones de estado y eliminación se realizan mediante formularios POST protegidos con CSRF.
@@ -104,10 +110,13 @@ La interfaz espera los siguientes recursos REST:
 - `POST /api/clientes-pppoe/{id}/cambiar-estado/`
 - `DELETE /api/clientes-pppoe/{id}/`
 - `GET /api/routers/`
-- `GET /api/interfaces/` (cuando esté disponible en la API)
-- `GET /api/enlaces-isp/` (cuando esté disponible en la API)
 
-Las vistas de infraestructura están diseñadas para seguir funcionando aunque un recurso nuevo aún no exista en el servidor: mostrarán un estado vacío o una advertencia de API en lugar de bloquear el resto del panel.
+Las páginas "Interfaces" y "Enlaces ISP" se quitaron de la web porque los
+endpoints `GET /api/interfaces/` y `GET /api/enlaces-isp/` no existen en la
+API y esas páginas siempre fallaban con 404, y porque no son necesarias para
+la regla de negocio actual. Si se necesitan después, hay que crear primero
+esos endpoints en `mikrotik-admin-api` como trabajo aparte; no se crean en
+este repositorio.
 
 Las respuestas paginadas de Django REST Framework con la forma `{"results": [...]}` también son admitidas.
 
@@ -135,7 +144,7 @@ En edición se puede omitir `password_pppoe` para conservar la contraseña almac
 ```powershell
 python manage.py check
 python manage.py test
-python manage.py runserver
+python manage.py runserver 8001
 ```
 
 ## Estructura futura
