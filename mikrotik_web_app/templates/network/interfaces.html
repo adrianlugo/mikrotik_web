@@ -1,7 +1,0 @@
-{% extends 'layouts/base.html' %}
-{% block title %}Interfaces{% endblock %}
-{% block content %}
-<div class="mb-6"><p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Red</p><h1 class="mt-1 text-2xl font-bold text-gray-900">Interfaces MikroTik</h1><p class="mt-1 text-sm text-gray-500">Estado de las interfaces reportadas por los routers.</p></div>
-{% if api_error %}<div class="api-banner mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ api_error }}</div>{% endif %}
-<div class="card divide-y">{% for interface in interfaces %}<div class="table-row flex flex-wrap items-center gap-4 px-6 py-4"><div class="rounded-lg bg-slate-100 p-2 text-slate-600"><i data-lucide="network" class="h-5 w-5"></i></div><div><p class="font-semibold text-gray-800">{{ interface.nombre|default:interface.name }}</p><p class="text-xs text-gray-400">{{ interface.tipo|default:interface.type|default:"Interface" }} · {{ interface.router_nombre|default:interface.router|default:"Router" }}</p></div><span class="ml-auto rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">{{ interface.estado|default:interface.status|default:"Disponible" }}</span></div>{% empty %}<div class="py-14 text-center text-sm text-gray-400">No hay interfaces disponibles.</div>{% endfor %}</div>
-{% endblock %}
