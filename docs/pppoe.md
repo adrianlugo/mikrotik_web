@@ -8,6 +8,14 @@
 4. Crear o actualizar el cliente mediante `/api/clientes-pppoe/`.
 5. Consultar, activar, suspender, hacer ping o patear la sesión desde el listado.
 
+La sincronización se hace por router: `POST /api/routers/{id}/sincronizar/`, desde el dashboard o desde el detalle del router. No existe `POST /api/clientes-pppoe/sincronizar/` en la API.
+
+## Planes: qué envía el formulario
+
+El formulario de plan envía `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router` y `cola_padre`. La cola padre es un desplegable alimentado por `GET /api/routers/{id}/colas/`; si se deja vacía, la API genera una cola padre llamada `Plan-{nombre_perfil}`.
+
+Los campos `direccion_local` (IP del loopback) y `pool_remoto` (nombre del pool) de la API **no** están en el formulario web: solo se pueden poner por la API directamente, en el admin de la API o importándolos con la sincronización desde un perfil ya creado en el router. Ver [Contrato con la API](contrato-api.md).
+
 ## Contrato enviado a la API
 
 Alta:
@@ -63,8 +71,10 @@ Cambio de estado:
 
 ## Verificación
 
-```powershell
+```bash
 python manage.py test mikrotik_web_app
 python manage.py check
 python manage.py makemigrations --check --dry-run
 ```
+
+La suite tiene 51 tests; 1 fallo preexistente y ajeno a la documentación: `test_create_invoice`, dependiente de la fecha.
