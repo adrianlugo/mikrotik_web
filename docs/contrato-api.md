@@ -1,0 +1,93 @@
+# Contrato con la API
+
+La web es un cliente puro de `mikrotik-admin-api`: no tiene modelos locales. Esta página lista los endpoints reales que usa, para que el README no prometa recursos que la API no tiene.
+
+Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticación: `Authorization: Token <token>`, guardado en la sesión Django tras `POST /api/token/`.
+
+## Autenticación
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `POST` | `/api/token/` | Inicio de sesión web. Devuelve solo `{"token": "..."}` (sin usuario ni rol). |
+
+## Routers
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `GET` | `/api/routers/` | Inventario y desplegables. |
+| `POST` | `/api/routers/` | Alta de router (nombre, `ip_address`, `puerto_api` por defecto 8729, usuario, contraseña, activo). |
+| `GET` | `/api/routers/{id}/` | Detalle del router. |
+| `PATCH` | `/api/routers/{id}/` | Edición (la contraseña se omite si está vacía, para conservarla). |
+| `DELETE` | `/api/routers/{id}/` | Eliminación. |
+| `POST` | `/api/routers/{id}/verificar-conexion/` | Verificación de conexión. |
+| `POST` | `/api/routers/{id}/sincronizar/` | Sincronización de ese router. |
+| `POST` | `/api/routers/{id}/reparar-colas/` | Reparación de colas de clientes DHCP/IP fija. |
+| `GET` | `/api/routers/{id}/consumo/` | Consumo de colas (`router`, `total_colas`, `colas`). |
+| `GET` | `/api/routers/{id}/dhcp-leases/` | Leases DHCP. |
+| `GET` | `/api/routers/{id}/direcciones-ip/` | Desplegable de `direccion_local` (no usado aún en el formulario web). |
+| `GET` | `/api/routers/{id}/pools/` | Desplegable de `pool_remoto` (no usado aún en el formulario web). |
+| `GET` | `/api/routers/{id}/colas/` | Desplegable de `cola_padre` del plan. |
+
+## Planes
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `GET` | `/api/planes/` | Listado de planes. |
+| `POST` | `/api/planes/` | Alta de plan. |
+| `GET` | `/api/planes/{id}/` | Edición de plan. |
+| `PATCH` | `/api/planes/{id}/` | Guardado de la edición. |
+| `DELETE` | `/api/planes/{id}/` | Eliminación. |
+
+Campos que envía la web: `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router` y `cola_padre` (desplegable por router; vacío = la API genera `Plan-{perfil}`).
+
+Campos que la API acepta y la web **no** envía: `direccion_local` y `pool_remoto`. Solo se pueden poner por la API directamente, en el admin de la API o importándolos con la sincronización desde un perfil ya creado en el router.
+
+## Clientes PPPoE
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `GET` | `/api/clientes-pppoe/` | Listado y alta rápida del dashboard. |
+| `POST` | `/api/clientes-pppoe/` | Alta (`nombre_completo`, `usuario_pppoe`, `password_pppoe`, `direccion_ip_antena`, `plan`, `router`, `estado`). |
+| `GET` | `/api/clientes-pppoe/{id}/` | Edición. |
+| `PATCH` | `/api/clientes-pppoe/{id}/` | Guardado (sin `password_pppoe` si se deja vacía, para conservarla). |
+| `DELETE` | `/api/clientes-pppoe/{id}/` | Eliminación. |
+| `GET` | `/api/clientes-pppoe/activos/` | Conexiones activas. Devuelve `routers` (lista), `total_conectados`, `conexiones` y `errores`. |
+| `POST` | `/api/clientes-pppoe/{id}/cambiar-estado/` | Activación/suspensión, con `{"estado": "activo"}` o `{"estado": "suspendido"}`. |
+| `POST` | `/api/clientes-pppoe/{id}/ping/` | Ping desde el router. |
+| `POST` | `/api/clientes-pppoe/{id}/patear/` | Desconexión de la sesión. |
+
+## Clientes DHCP / IP fija
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `GET` | `/api/clientes-red/` | Listado. |
+| `POST` | `/api/clientes-red/` | Alta (nombre, tipo, IP, MAC, plan, router, interfaz, servidor DHCP). |
+| `GET` | `/api/clientes-red/{id}/` | Edición. |
+| `PATCH` | `/api/clientes-red/{id}/` | Guardado. |
+| `DELETE` | `/api/clientes-red/{id}/` | Eliminación. |
+| `POST` | `/api/clientes-red/{id}/crear-cola/` | Reparación de reserva y cola. |
+
+## Facturación
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `GET/POST` | `/api/facturas/` | Listado y alta. |
+| `GET/PATCH/DELETE` | `/api/facturas/{id}/` | Edición y eliminación. |
+| `GET/POST` | `/api/pagos/` | Listado y alta. |
+| `GET/PATCH/DELETE` | `/api/pagos/{id}/` | Edición y eliminación. |
+
+## Sincronización
+
+| Método | Endpoint | Uso en la web |
+|---|---|---|
+| `POST` | `/api/routers/{id}/sincronizar/` | Sincronización bidireccional de ese router (desde el dashboard y desde el detalle del router). |
+
+No existen en la API `POST /api/clientes-pppoe/sincronizar/` ni `/importar-desde-mikrotik/`: versiones anteriores de este documento los nombraban y eran incorrectas.
+
+## Endpoints que no existen
+
+- `GET /api/interfaces/` y `GET /api/enlaces-isp/`: no existen en la API. Por eso las páginas "Interfaces" y "Enlaces ISP" se quitaron de la web.
+
+## Formato de las respuestas
+
+La API no pagina: devuelve listas planas. El cliente (`get_list`) también acepta la forma paginada `{"results": [...]}`, `{"items": [...]}` o `{"data": [...]}` por si la API pagina en el futuro.
