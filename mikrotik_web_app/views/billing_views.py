@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
+from ..errores import mensaje_usuario
 from ..mixins import AuthenticatedAPIViewMixin, FacturaFormMixin, PagoFormMixin
 from ..utils import _decimal, _related_id, _related_form_id
 
@@ -19,13 +20,13 @@ class FacturaListView(AuthenticatedAPIViewMixin, TemplateView):
         try:
             facturas = api.get_list("facturas/")
         except Exception as exc:
-            api_errors.append(str(exc))
+            api_errors.append(mensaje_usuario(exc))
             self.api_error(self.request, exc)
 
         try:
             pagos = api.get_list("pagos/")
         except Exception as exc:
-            api_errors.append(str(exc))
+            api_errors.append(mensaje_usuario(exc))
             self.api_error(self.request, exc)
 
         paid_by_invoice = {}
@@ -80,7 +81,7 @@ class FacturaCrearView(FacturaFormMixin, AuthenticatedAPIViewMixin, TemplateView
             context["clientes"] = self.get_clientes(self.api())
         except Exception as exc:
             context["clientes"] = []
-            context["api_error"] = str(exc)
+            context["api_error"] = mensaje_usuario(exc)
             self.api_error(self.request, exc)
         return context
 
@@ -101,7 +102,7 @@ class FacturaCrearView(FacturaFormMixin, AuthenticatedAPIViewMixin, TemplateView
             self.api_error(request, exc)
             context = self.get_context_data()
             context.update(
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
                 form_data=request.POST.dict(),
                 cliente_id=_related_form_id(request.POST.get("cliente")),
             )
@@ -122,7 +123,7 @@ class FacturaEditarView(FacturaFormMixin, AuthenticatedAPIViewMixin, TemplateVie
             context["form_data"] = self.normalize_factura_form_data(factura)
             context["clientes"] = self.get_clientes(api)
         except Exception as exc:
-            context.update(factura={}, form_data={}, clientes=[], api_error=str(exc))
+            context.update(factura={}, form_data={}, clientes=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
@@ -143,7 +144,7 @@ class FacturaEditarView(FacturaFormMixin, AuthenticatedAPIViewMixin, TemplateVie
             self.api_error(request, exc)
             context = self.get_context_data(pk=pk)
             context.update(
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
                 form_data=request.POST.dict(),
                 cliente_id=_related_form_id(request.POST.get("cliente")),
             )
@@ -174,13 +175,13 @@ class PagoListView(AuthenticatedAPIViewMixin, TemplateView):
         try:
             pagos = api.get_list("pagos/")
         except Exception as exc:
-            api_errors.append(str(exc))
+            api_errors.append(mensaje_usuario(exc))
             self.api_error(self.request, exc)
 
         try:
             facturas = api.get_list("facturas/")
         except Exception as exc:
-            api_errors.append(str(exc))
+            api_errors.append(mensaje_usuario(exc))
             self.api_error(self.request, exc)
 
         factura_labels = {}
@@ -231,7 +232,7 @@ class PagoCrearView(PagoFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             context["facturas"] = self.get_facturas(self.api())
         except Exception as exc:
             context["facturas"] = []
-            context["api_error"] = str(exc)
+            context["api_error"] = mensaje_usuario(exc)
             self.api_error(self.request, exc)
         return context
 
@@ -252,7 +253,7 @@ class PagoCrearView(PagoFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             self.api_error(request, exc)
             context = self.get_context_data()
             context.update(
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
                 form_data=request.POST.dict(),
                 factura_id=_related_form_id(request.POST.get("factura")),
             )
@@ -273,7 +274,7 @@ class PagoEditarView(PagoFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             context["form_data"] = self.normalize_pago_form_data(pago)
             context["facturas"] = self.get_facturas(api)
         except Exception as exc:
-            context.update(pago={}, form_data={}, facturas=[], api_error=str(exc))
+            context.update(pago={}, form_data={}, facturas=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
@@ -294,7 +295,7 @@ class PagoEditarView(PagoFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             self.api_error(request, exc)
             context = self.get_context_data(pk=pk)
             context.update(
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
                 form_data=request.POST.dict(),
                 factura_id=_related_form_id(request.POST.get("factura")),
             )

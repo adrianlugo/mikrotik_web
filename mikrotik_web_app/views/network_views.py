@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
+from ..errores import mensaje_usuario
 from ..mixins import AuthenticatedAPIViewMixin, ClienteRedFormMixin
 
 
@@ -12,7 +13,7 @@ class ClientesRedListView(AuthenticatedAPIViewMixin, TemplateView):
         try:
             context["clientes"] = self.api().get_list("clientes-red/")
         except Exception as exc:
-            context.update(clientes=[], api_error=str(exc))
+            context.update(clientes=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
@@ -26,16 +27,19 @@ class ClienteRedCrearView(ClienteRedFormMixin, AuthenticatedAPIViewMixin, Templa
         try:
             context.update(self.get_catalogs(self.api()))
         except Exception as exc:
-            context.update(planes=[], routers=[], api_error=str(exc))
+            context.update(planes=[], routers=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
     def post(self, request, *args, **kwargs):
         try:
             payload = self.build_payload(request.POST)
-        except (KeyError, TypeError, ValueError):
-            messages.error(request, "Seleccione un plan y un router válidos.")
-            return redirect("cliente_red_crear")
+        except (KeyError, TypeError, ValueError) as exc:
+            messages.error(request, str(exc))
+            context = self.get_context_data()
+            form_data = self.normalize_form_data(request.POST.dict())
+            context.update(form_data=form_data, cliente=form_data)
+            return self.render_to_response(context)
 
         try:
             self.api().post("clientes-red/", payload)
@@ -44,7 +48,7 @@ class ClienteRedCrearView(ClienteRedFormMixin, AuthenticatedAPIViewMixin, Templa
             self.api_error(request, exc)
             context = self.get_context_data()
             form_data = self.normalize_form_data(request.POST.dict())
-            context.update(api_error=str(exc), form_data=form_data, cliente=form_data)
+            context.update(api_error=mensaje_usuario(exc), form_data=form_data, cliente=form_data)
             return self.render_to_response(context)
         return redirect("clientes_red_list")
 
@@ -62,16 +66,19 @@ class ClienteRedEditarView(ClienteRedFormMixin, AuthenticatedAPIViewMixin, Templ
             context["form_data"] = self.normalize_form_data(context["cliente"])
             context.update(self.get_catalogs(api))
         except Exception as exc:
-            context.update(cliente={}, form_data={}, planes=[], routers=[], api_error=str(exc))
+            context.update(cliente={}, form_data={}, planes=[], routers=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
     def post(self, request, pk, *args, **kwargs):
         try:
             payload = self.build_payload(request.POST)
-        except (KeyError, TypeError, ValueError):
-            messages.error(request, "Seleccione un plan y un router válidos.")
-            return redirect("cliente_red_editar", pk=pk)
+        except (KeyError, TypeError, ValueError) as exc:
+            messages.error(request, str(exc))
+            context = self.get_context_data(pk=pk)
+            form_data = self.normalize_form_data(request.POST.dict())
+            context.update(form_data=form_data, cliente=form_data)
+            return self.render_to_response(context)
 
         try:
             self.api().patch(f"clientes-red/{pk}/", payload)
@@ -80,7 +87,7 @@ class ClienteRedEditarView(ClienteRedFormMixin, AuthenticatedAPIViewMixin, Templ
             self.api_error(request, exc)
             context = self.get_context_data(pk=pk)
             form_data = self.normalize_form_data(request.POST.dict())
-            context.update(api_error=str(exc), form_data=form_data, cliente=form_data)
+            context.update(api_error=mensaje_usuario(exc), form_data=form_data, cliente=form_data)
             return self.render_to_response(context)
         return redirect("clientes_red_list")
 
