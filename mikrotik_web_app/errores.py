@@ -1,17 +1,27 @@
 """Mensajes de error en español llano para el usuario de la web.
 
-La API devuelve códigos y detalles técnicos (a veces en inglés, a veces
-con rutas, puertos o textos internos). Al usuario solo le llega el mensaje
-de aquí: corto, en español y sin detalles internos. El detalle técnico
-queda en el registro (logs/django.log), que escribe el cliente de la API.
+La API devuelve sus errores en un único formato (desde su PR #6):
+
+    {"error": "<mensaje claro en español>", "codigo": "<clave>"}
+
+y en los 400 de validación además ``"detalles"`` (por campo o lista).
+Al usuario solo le llega el mensaje de ``error``: corto, en español y
+sin detalles internos. La ``codigo`` es una clave estable para la
+lógica (por ejemplo "borrado_protegido" o "demasiadas_peticiones"),
+nunca se muestra. Los ``detalles`` de un 400 se usan para decir qué
+campo corregir. El detalle técnico queda en el registro
+(logs/django.log), que escribe el cliente de la API.
 
 Reglas:
 - 401: la sesión caducó. Quien llama limpia la sesión y redirige a login.
 - 403: sin permiso.
 - 404: eso ya no existe en la API.
+- 409: borrado protegido (hay registros que dependen de ese).
+- 429: demasiadas peticiones.
 - 502/503/504: la API no pudo hablar con el router o no responde.
 - Sin código y fallo de conexión: la API no está corriendo o no responde.
-- 400: errores de validación, con el texto ya limpio del cliente.
+- 400: errores de validación, con el texto ya limpio del cliente y los
+  detalles por campo para decir qué corregir.
 - Cualquier otra cosa: mensaje genérico, sin exponer nada interno.
 """
 
@@ -27,6 +37,12 @@ MENSAJE_SIN_PERMISO = (
 MENSAJE_NO_EXISTE = (
     "Eso ya no existe en la API: puede que se haya eliminado. Vuelve a "
     "cargar la página e inténtalo de nuevo."
+)
+MENSAJE_BORRADO_PROTEGIDO = (
+    "No se puede eliminar porque hay registros que dependen de él."
+)
+MENSAJE_DEMASIADAS_PETICIONES = (
+    "Demasiadas peticiones. Espera un momento e inténtalo de nuevo."
 )
 MENSAJE_ROUTER_SIN_RESPUESTA = (
     "La API no pudo hablar con el router (o la API no responde ahora mismo). "
@@ -60,6 +76,7 @@ TRADUCCIONES_DRF = {
     "Invalid token": "El token no es válido.",
     "Authentication credentials were not provided.": "Faltan las credenciales de autenticación.",
     "Not found.": "No encontrado.",
+    "Ensure this value is greater than or equal to 0.": "El valor debe ser mayor o igual que 0.",
     'Method "GET" not allowed.': "Esa acción no está permitida.",
     'Method "POST" not allowed.': "Esa acción no está permitida.",
     'Method "PATCH" not allowed.': "Esa acción no está permitida.",
@@ -83,15 +100,32 @@ def mensaje_usuario(exc):
         return MENSAJE_SIN_PERMISO
     if status_code == 404:
         return MENSAJE_NO_EXISTE
+    if status_code == 409:
+        # La API solo devuelve 409 por borrado protegido (otro registro
+        # depende de este): el mensaje dice por qué no se pudo eliminar.
+        return MENSAJE_BORRADO_PROTEGIDO
+    if status_code == 429:
+        # La API ya dice cuántos segundos esperar ("Demasiadas peticiones.
+        # Espera 30 segundos..."): se respeta su texto.
+        texto = str(exc).strip()
+        return texto or MENSAJE_DEMASIADAS_PETICIONES
     if status_code in (502, 503, 504):
         return MENSAJE_ROUTER_SIN_RESPUESTA
     if status_code == 400:
         texto = str(exc).strip()
+        # Los detalles por campo de la API dicen qué corregir: se añaden
+        # los que no estén ya en el mensaje (el primero ya viene en
+        # "error"), para no repetir lo mismo dos veces.
+        detalles = list(getattr(exc, "detalles", None) or [])
+        extras = [d for d in detalles if d and d not in texto]
+        if extras:
+            añadido = "Revisa: " + "; ".join(e.rstrip(".") for e in extras) + "."
+            texto = (texto + " " + añadido) if texto else añadido
         return texto or "Revisa los datos enviados: la API no los aceptó."
     if status_code is not None and status_code >= 500:
         return MENSAJE_API_ERROR
     if status_code is not None:
-        # Otros 4xx (405, 409, 422...): el texto ya viene limpio del cliente.
+        # Otros 4xx (405, 422...): el texto ya viene limpio del cliente.
         texto = str(exc).strip()
         return texto or MENSAJE_API_ERROR
     if hasattr(exc, "status_code"):

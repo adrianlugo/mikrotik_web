@@ -15,7 +15,7 @@ Aplicación web desarrollada con Django para operar la API REST de administraci�
 - Routers: inventario, detalle, verificación de conexión, sincronización, reparación de colas, consumo y leases DHCP.
 - Facturas y pagos.
 - Sincronización bidireccional con RouterOS (por router).
-- Cliente HTTP centralizado (`api_client.py`), configurable; tolera respuestas paginadas con forma `{"results": [...]}` aunque la API no pagina: devuelve listas planas.
+- Cliente HTTP centralizado (`api_client.py`), configurable; lee la primera página de las respuestas paginadas de la API (100 registros por página).
 - Mensajes de operación y errores visibles para el usuario.
 
 ## Arquitectura
@@ -34,7 +34,7 @@ mikrotik_web_app/
 │   ├── pppoe/         index (dashboard), clientes, planes, conexiones
 │   ├── network/       clientes_red, routers, router_detalle, router_monitoreo
 │   └── billing/       facturas, pagos
-└── tests/             Pruebas de integración web (63 tests)
+└── tests/             Pruebas de integración web (91 tests)
 
 core/
 ├── settings.py        Configuración Django y variables de API
@@ -113,7 +113,7 @@ Al cerrar sesión (`/web/logout/`, POST), la web revoca el token DRF en la API (
 
 ## Cómo se muestran los errores
 
-Al usuario solo le llegan mensajes cortos en español, sin detalles internos (nada de inglés, rutas, puertos ni trazas: eso queda en el registro, `logs/django.log`). La traducción de código a mensaje vive en `mikrotik_web_app/errores.py` (`mensaje_usuario()`); el cliente de la API (`api_client.py`) ya entrega el error limpio y traducido, y las vistas nunca muestran el texto crudo de la excepción.
+La API devuelve todos sus errores en un único formato: `{"error": "<mensaje claro en español>", "codigo": "<clave>"}` (y en los 400 además `"detalles"` por campo). Al usuario solo le llega el mensaje de `error`, corto y en español, sin detalles internos (nada de inglés, rutas, puertos ni trazas: eso queda en el registro, `logs/django.log`). La `codigo` nunca se muestra: es solo para la lógica. La traducción de código a mensaje vive en `mikrotik_web_app/errores.py` (`mensaje_usuario()`); el cliente de la API (`api_client.py`) ya entrega el error limpio y traducido, y las vistas nunca muestran el texto crudo de la excepción.
 
 | Lo que pasa | Qué ve el usuario |
 |---|---|
@@ -122,7 +122,10 @@ Al usuario solo le llegan mensajes cortos en español, sin detalles internos (na
 | Sesión caducada / token inválido (401) | "Tu sesión caducó. Inicia sesión de nuevo." La sesión se limpia y la web redirige a `/web/login/`. |
 | Sin permiso (403) | "No tienes permiso para hacer eso. Si crees que es un error, pide a un administrador que revise tu usuario en la API." La sesión se mantiene. |
 | Algo que ya no existe (404) | "Eso ya no existe en la API: puede que se haya eliminado. Vuelve a cargar la página e inténtalo de nuevo." |
-| Datos no válidos (400) | El error de validación en español (los mensajes habituales de DRF se traducen, por ejemplo "This field is required." → "Este campo es obligatorio."). El formulario se vuelve a mostrar con los datos enviados y dice qué corregir. |
+| Datos no válidos (400) | El error de validación en español, con los detalles por campo de la API para decir qué corregir (por ejemplo "subida_mbps: El valor debe ser mayor o igual que 0."). El formulario se vuelve a mostrar con los datos enviados y dice qué corregir. |
+| No se puede eliminar porque hay registros que dependen de él (409) | "No se puede eliminar porque hay registros que dependen de él." |
+| Demasiadas peticiones (429) | El texto de la API, que dice cuántos segundos esperar. |
+| Reparar colas a medias | Un aviso (no un éxito): "Colas reparadas en parte: X de Y no se pudieron reparar (nombres). Inténtalo de nuevo." Si fallaron todas, la API responde 502 y se muestra el error del router. |
 | Error propio de la web (500) o página inexistente (404) | Páginas amigables `templates/500.html` y `templates/404.html`, con un enlace para volver al inicio. |
 
 Además: un valor no numérico en una velocidad, un puerto o un monto ya no se convierte en silencio en 0 (antes un plan con subida "abc" se guardaba en 0 Mbps y una factura con monto "abc" en 0.00); el formulario dice qué corregir antes de enviar nada. Y si un catálogo del formulario de plan falla con 404, el aviso dice que el endpoint no existe en esa versión de la API, no que el router no tenga valores.
@@ -190,7 +193,7 @@ Resumen:
 
 Las páginas "Interfaces" y "Enlaces ISP" se quitaron de la web porque los endpoints `GET /api/interfaces/` y `GET /api/enlaces-isp/` no existen en la API y esas páginas siempre fallaban con 404, y porque no son necesarias para la regla de negocio actual. Si se necesitan después, hay que crear primero esos endpoints en `mikrotik-admin-api` como trabajo aparte; no se crean en este repositorio.
 
-Las respuestas paginadas de Django REST Framework con la forma `{"results": [...]}` también son admitidas por el cliente, aunque la API no pagina y devuelve listas planas.
+La API pagina con 100 registros por página y la web lee solo la primera página: con más de 100 registros en un listado, solo se ven los 100 primeros.
 
 ### Alta y edición PPPoE
 
@@ -223,8 +226,8 @@ python manage.py runserver 8001
 
 ## Problemas conocidos (no corregidos en este cambio)
 
-- La suite pasa a 82 tests (19 nuevos en `mikrotik_web_app/tests/test_errores.py`); 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main). El workflow de CI (`check` + tests en cada PR) sale en rojo por ese test hasta que se arregle aparte. Este cambio no se pudo verificar por ejecución en local por control de riesgo: hay que correr `manage.py check` y `manage.py test` antes de mezclar.
-- La cola padre capa el total del plan a la velocidad del plan: `asegurar_cola_padre()` en la API pone a la cola padre el mismo límite del plan. Falta decidir el total del proveedor y si hay una cola global o una por plan. Sin cambiar la lógica, solo documentado.
+- La suite pasa a 91 tests (28 nuevos de errores en `mikrotik_web_app/tests/test_errores.py` y `test_errores_api6.py`); 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main). El workflow de CI (`check` + tests en cada PR) sale en rojo por ese test hasta que se arregle aparte. Este cambio no se pudo verificar por ejecución en local por control de riesgo: hay que correr `manage.py check` y `manage.py test` antes de mezclar.
+- La cola padre: desde la API, elegir una cola existente ya no toca su límite y vacío es sin cola padre (ya no se auto-genera `Plan-{perfil}`). Falta decidir el total del proveedor y si hay una cola global o una por plan.
 - Si varias listas del dashboard fallan a la vez, el mismo mensaje de error se repite una vez por lista (no se deduplica).
 - `get_list()` devuelve `[]` en silencio si la API trae una respuesta con una forma inesperada (ni lista ni `{"results"/"items"/"data": [...]}`): en ese caso la página diría "No hay..." sin avisar de que la respuesta no se entendió.
 - El alta rápida del dashboard (`DashboardIndexView.post`) no tiene formulario en las plantillas y al fallar redirige perdiendo la selección: es código heredado sin uso visible.

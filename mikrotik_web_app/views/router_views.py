@@ -126,12 +126,52 @@ class RouterAccionView(AuthenticatedAPIViewMixin, View):
             response = self.api().post(f"routers/{router_id}/{self.accion}/")
             if isinstance(response, dict) and response.get("status") == "error":
                 messages.error(request, response.get("message", "La operación del router falló."))
+            elif isinstance(response, dict) and response.get("status") == "partial":
+                # Reparación a medias (la API responde 200 con "errores"):
+                # avisar, no darlo por hecho. Si fallaron todas, la API
+                # responde 502 y se llega aquí por la excepción de abajo.
+                messages.warning(request, self._mensaje_parcial(response))
             else:
                 detail = response.get("detail") if isinstance(response, dict) else None
                 messages.success(request, detail or self.mensaje_exito)
         except Exception as exc:
             self.api_error(request, exc)
         return redirect("router_detalle", router_id=router_id)
+
+    def _mensaje_parcial(self, response):
+        """Aviso cuando una acción se completó solo en parte.
+
+        La API devuelve `errores` con el cliente y el motivo de cada
+        fallo. Se nombran los primeros (como mucho 3) y se dice cuántos
+        fallaron en total, para poder intentarlo de nuevo sabiendo qué
+        quedó pendiente. Solo `reparar-colas` devuelve "partial" hoy;
+        para cualquier otra acción el texto es genérico.
+        """
+        errores = response.get("errores") or []
+        fallidos = len(errores)
+        total = response.get("total_clientes")
+        nombres = [
+            error.get("nombre") or f"cliente {error.get('cliente')}"
+            for error in errores
+            if isinstance(error, dict)
+        ][:3]
+        detalle = f" ({', '.join(nombres)})" if nombres else ""
+        if self.accion == "reparar-colas":
+            base = "Colas reparadas en parte"
+            if total:
+                base += f": {fallidos} de {total} no se pudieron reparar"
+            else:
+                base += f": {fallidos} no se pudieron reparar"
+            return base + detalle + ". Inténtalo de nuevo."
+        if total:
+            return (
+                f"La operación se completó en parte: {fallidos} de {total} "
+                f"no se pudieron hacer{detalle}. Inténtalo de nuevo."
+            )
+        return (
+            f"La operación se completó en parte: {fallidos} "
+            f"no se pudieron hacer{detalle}. Inténtalo de nuevo."
+        )
 
 
 class RouterVerificarView(RouterAccionView):

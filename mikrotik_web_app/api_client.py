@@ -9,9 +9,20 @@ logger = logging.getLogger(__name__)
 
 
 class APIError(Exception):
-    def __init__(self, message, status_code=None):
+    """Error de la API, ya limpio para mostrar al usuario.
+
+    ``message`` es solo el texto de ``error`` de la API (nunca incluye
+    la clave ``codigo``); ``codigo`` es la clave estable de la API (por
+    ejemplo "validacion" o "borrado_protegido") para decidir qué hacer,
+    y ``detalles`` es la lista de mensajes por campo de un 400, para
+    decir qué corregir.
+    """
+
+    def __init__(self, message, status_code=None, codigo=None, detalles=None):
         super().__init__(message)
         self.status_code = status_code
+        self.codigo = codigo
+        self.detalles = list(detalles) if detalles else []
 
 
 class SesionCaducada(APIError):
@@ -25,6 +36,39 @@ class SesionCaducada(APIError):
         super().__init__(message, status_code=401)
 
 
+def _aplanar_detalles(detalles):
+    """Convierte `detalles` de un error 400 en mensajes "campo: texto".
+
+    La API devuelve `detalles` como diccionario por campo (el detalle de
+    un ValidationError de DRF) o como lista de mensajes. Se traduce lo
+    conocido y se aplana a una lista de textos, sin llaves ni claves
+    técnicas: es lo que se usa para decir qué campo corregir.
+    """
+    mensajes = []
+    if isinstance(detalles, dict):
+        for campo, errs in detalles.items():
+            if not isinstance(errs, list):
+                errs = [errs]
+            for err in errs:
+                if isinstance(err, dict):
+                    mensajes.extend(_aplanar_detalles(err))
+                    continue
+                texto = traducir_mensaje_drf(err)
+                if campo in ("non_field_errors", "__all__"):
+                    mensajes.append(texto)
+                else:
+                    mensajes.append(f"{campo}: {texto}")
+        return mensajes
+    if isinstance(detalles, list):
+        for item in detalles:
+            mensajes.extend(_aplanar_detalles(item))
+        return mensajes
+    if detalles is None:
+        return []
+    texto = str(detalles).strip()
+    return [traducir_mensaje_drf(texto)] if texto else []
+
+
 def _aplanar_errores(error_data):
     """Convierte el cuerpo de error de la API en una lista de mensajes.
 
@@ -32,10 +76,16 @@ def _aplanar_errores(error_data):
     {"non_field_errors": [...]}, y a veces {"detail": "..."}. Se aplana a
     texto, se traduce lo conocido y nunca se muestra el dict tal cual
     (antes el login mostraba el dict entero, llaves incluidas).
+
+    Las claves "codigo" y "detalles" del formato nuevo de la API no son
+    mensajes: "codigo" es solo para la lógica y "detalles" se extrae
+    aparte, así que aquí se saltan.
     """
     mensajes = []
     if isinstance(error_data, dict):
         for campo, errs in error_data.items():
+            if campo in ("codigo", "detalles"):
+                continue
             if isinstance(errs, dict):
                 for subcampo, suberrs in errs.items():
                     mensajes.extend(_aplanar_errores({f"{campo}.{subcampo}": suberrs}))
@@ -56,20 +106,48 @@ def _aplanar_errores(error_data):
     return [traducir_mensaje_drf(texto)] if texto else []
 
 
-def _detalle_error(response):
-    """Texto limpio del error de una respuesta HTTP de la API.
+def _extraer_error_api(error_data):
+    """(mensaje, codigo, detalles) del cuerpo de error de la API.
 
-    Sin códigos ni detalles internos: el mensaje que se muestra al usuario
-    es este; el detalle técnico queda en el registro (ver logger).
+    Formato nuevo de la API (su PR #6): {"error": "...", "codigo": "..."}
+    y en los 400 además "detalles" (por campo o lista). Se muestra solo
+    "error": "codigo" es una clave para la lógica, no para el usuario
+    (antes se mostraba "error: ... | codigo: ..."), y "detalles" va
+    aparte para decir qué campo corregir. El formato viejo de DRF
+    (dict por campo, "detail", ...) sigue funcionando igual.
+    """
+    if isinstance(error_data, dict) and "error" in error_data:
+        mensaje = str(error_data.get("error") or "").strip()
+        codigo = error_data.get("codigo")
+        detalles = _aplanar_detalles(error_data.get("detalles"))
+        if not mensaje:
+            mensaje = "La API devolvió un error."
+        return mensaje, codigo, detalles
+    if isinstance(error_data, dict):
+        detalles = _aplanar_detalles(error_data.get("detalles"))
+        mensajes = _aplanar_errores(error_data)
+        mensaje = " | ".join(mensajes) if mensajes else ""
+        return mensaje, error_data.get("codigo"), detalles
+    mensajes = _aplanar_errores(error_data)
+    return (" | ".join(mensajes) if mensajes else ""), None, []
+
+
+def _detalle_error(response):
+    """Mensaje, código y detalles limpios del error de una respuesta HTTP.
+
+    Sin códigos ni detalles internos en el mensaje: lo que se muestra al
+    usuario es el mensaje; el código y los detalles van en la excepción
+    para que la vista decida qué hacer. El detalle técnico queda en el
+    registro (ver logger).
     """
     try:
         error_data = response.json()
     except ValueError:
         error_data = response.text.strip() or response.reason
-    mensajes = _aplanar_errores(error_data)
-    if mensajes:
-        return " | ".join(mensajes)
-    return f"La API respondió {response.status_code}."
+    mensaje, codigo, detalles = _extraer_error_api(error_data)
+    if not mensaje:
+        mensaje = f"La API respondió {response.status_code}."
+    return mensaje, codigo, detalles
 
 
 class MikrotikAPIClient:
@@ -135,17 +213,19 @@ class MikrotikAPIClient:
 
         # 4. Manejo de errores HTTP
         if response.status_code >= 400:
-            detalle = _detalle_error(response)
+            mensaje, codigo, detalles = _detalle_error(response)
             logger.warning(
                 "La API respondió %s en %s %s: %s",
                 response.status_code,
                 method,
                 path,
-                detalle,
+                mensaje,
             )
             raise APIError(
-                detalle,
+                mensaje,
                 status_code=response.status_code,
+                codigo=codigo,
+                detalles=detalles,
             )
 
         if response.status_code == 204:
@@ -175,11 +255,13 @@ class MikrotikAPIClient:
             raise APIError("No se pudo conectar con la API.") from exc
 
         if response.status_code >= 400:
-            detalle = _detalle_error(response)
-            logger.warning("La autenticación de la API falló (%s): %s", response.status_code, detalle)
+            mensaje, codigo, detalles = _detalle_error(response)
+            logger.warning("La autenticación de la API falló (%s): %s", response.status_code, mensaje)
             raise APIError(
-                detalle,
+                mensaje,
                 status_code=response.status_code,
+                codigo=codigo,
+                detalles=detalles,
             )
 
         try:
