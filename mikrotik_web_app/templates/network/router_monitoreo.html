@@ -24,7 +24,7 @@
             {% for lease in leases %}
             <tr><td class="px-4 py-3 font-mono">{{ lease.address|default:'—' }}</td><td class="px-4 py-3 font-mono">{{ lease.mac_address|default:'—' }}</td><td class="px-4 py-3">{{ lease.server|default:'—' }}</td><td class="px-4 py-3">{{ lease.status|default:'—' }}</td><td class="px-4 py-3">{{ lease.comment|default:'—' }}</td></tr>
             {% empty %}
-            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">No se encontraron leases DHCP.</td></tr>
+            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">{% if consulta_fallida %}No se pudieron consultar los leases DHCP: la API no respondió o el router no está disponible.{% else %}No se encontraron leases DHCP.{% endif %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -35,7 +35,7 @@
             {% for cola in consumo %}
             <tr><td class="px-4 py-3 font-semibold text-gray-800">{{ cola.name|default:'—' }}</td><td class="px-4 py-3"><span class="font-mono text-xs">{{ cola.target|default:'—' }}</span><br><span class="text-xs text-gray-500">{{ cola.parent|default:'Sin padre' }}</span></td><td class="px-4 py-3 font-mono text-xs">{{ cola.max_limit|default:'—' }}</td><td class="px-4 py-3 font-mono text-xs">{{ cola.rate|default:'—' }}</td><td class="px-4 py-3">{{ cola.disabled|default:'false' }}</td></tr>
             {% empty %}
-            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">No se encontraron colas simples.</td></tr>
+            <tr><td colspan="5" class="px-4 py-10 text-center text-gray-400">{% if consulta_fallida %}No se pudo consultar el consumo: la API no respondió o el router no está disponible.{% else %}No se encontraron colas simples.{% endif %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
