@@ -4,15 +4,26 @@
 
 {% block content %}
 <div class="mb-6 flex items-center justify-between">
-    <div><h1 class="text-2xl font-bold text-gray-900">Conexiones activas</h1><p class="text-sm text-gray-500">{{ router_nombre }}</p></div>
-    <div class="rounded-lg bg-emerald-50 px-4 py-2 text-emerald-700"><span class="text-2xl font-bold">{{ total_conectados }}</span> conectados</div>
+    <div><h1 class="text-2xl font-bold text-gray-900">Conexiones activas</h1><p class="text-sm text-gray-500">{% if activos_no_disponibles %}No disponible{% elif router_nombre %}{{ router_nombre }}{% else %}Sin datos del router{% endif %}</p></div>
+    <div class="rounded-lg bg-emerald-50 px-4 py-2 text-emerald-700"><span class="text-2xl font-bold">{% if total_conectados is None %}—{% else %}{{ total_conectados }}{% endif %}</span> conectados</div>
 </div>
 {% if api_error %}<div class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ api_error }}</div>{% endif %}
+{% if activos_errores %}
+<div class="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <p class="font-semibold">Algunos routers no se pudieron consultar:</p>
+    <ul class="mt-1 list-disc pl-5">
+        {% for error in activos_errores %}
+        <li>{{ error.router|default:"Router" }}: {{ error.mensaje|default:error }}</li>
+        {% endfor %}
+    </ul>
+    <p class="mt-1">El número de conectados puede estar incompleto.</p>
+</div>
+{% endif %}
 <div class="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
     {% for conexion in conexiones %}
     <div class="flex items-center gap-3 border-b border-gray-100 px-6 py-4 last:border-0">
         <i data-lucide="user" class="w-5 text-slate-400"></i><span class="font-medium text-gray-700">{{ conexion.usuario_pppoe|default:conexion.usuario|default:conexion.name|default:conexion }}</span><span class="ml-auto rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800">En línea</span>
     </div>
-    {% empty %}<div class="py-12 text-center text-sm text-gray-400">No hay sesiones PPP activas.</div>{% endfor %}
+    {% empty %}<div class="py-12 text-center text-sm text-gray-400">{% if activos_no_disponibles %}No se pudieron consultar las sesiones activas: la API no respondió o el router no está disponible.{% else %}No hay sesiones PPP activas.{% endif %}</div>{% endfor %}
 </div>
 {% endblock %}
