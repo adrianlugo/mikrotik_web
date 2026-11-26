@@ -13,7 +13,61 @@ class APIClientTestCase(TestCase):
         MIKROTIK_API_PASSWORD="",
     )
     @patch("mikrotik_web_app.api_client.requests.request")
-    def test_token_uses_drf_authorization_scheme(self, request_mock):
+    def test_revoke_token_posts_to_revocar_endpoint(self, request_mock):
+        response = Mock(status_code=200)
+        response.json.return_value = {}
+        request_mock.return_value = response
+
+        client = MikrotikAPIClient()
+        self.assertTrue(client.revocar_token())
+
+        request_mock.assert_called_once_with(
+            "POST",
+            "http://api.test/api/token/revocar/",
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Token token-directo",
+            },
+            timeout=5,
+            json={},
+        )
+
+    @override_settings(
+        MIKROTIK_API_TOKEN="token-directo",
+        MIKROTIK_API_USERNAME="",
+        MIKROTIK_API_PASSWORD="",
+    )
+    @patch("mikrotik_web_app.api_client.requests.request")
+    def test_revoke_token_returns_false_when_api_has_no_endpoint(self, request_mock):
+        response = Mock(status_code=404)
+        response.json.return_value = {"detail": "No encontrado."}
+        request_mock.return_value = response
+
+        client = MikrotikAPIClient()
+        self.assertFalse(client.revocar_token())
+
+        self.assertEqual(
+            [call.args[1] for call in request_mock.call_args_list],
+            [
+                "http://api.test/api/token/revocar/",
+                "http://api.test/api/logout/",
+            ],
+        )
+
+    @override_settings(
+        MIKROTIK_API_TOKEN="token-directo",
+        MIKROTIK_API_USERNAME="",
+        MIKROTIK_API_PASSWORD="",
+    )
+    @patch("mikrotik_web_app.api_client.requests.request")
+    def test_revoke_token_treats_unauthorized_as_revoked(self, request_mock):
+        response = Mock(status_code=401)
+        response.json.return_value = {"detail": "Token inválido."}
+        request_mock.return_value = response
+
+        client = MikrotikAPIClient()
+        self.assertTrue(client.revocar_token())
+        request_mock.assert_called_once()
         response = Mock(status_code=200)
         response.json.return_value={"id": 1}
         request_mock.return_value = response
