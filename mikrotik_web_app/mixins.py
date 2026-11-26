@@ -1,4 +1,5 @@
 from datetime import date
+from ipaddress import ip_address
 
 from django.conf import settings
 from django.contrib import messages
@@ -91,6 +92,31 @@ class PlanFormMixin(APIViewMixin):
         return normalized
 
     @staticmethod
+    def _catalogo_router(api, router_id, endpoint, clave):
+        """Una lista de un catálogo del router (colas, direcciones, pools).
+
+        Devuelve (items, error): items es la lista (vacía si la API no la
+        trae) y error es el mensaje si la API falló (404/502, router sin
+        respuesta...), o None si fue bien. Nunca levanta excepción: que un
+        catálogo falle no debe romper el formulario.
+        """
+        try:
+            data = api.get(f"routers/{router_id}/{endpoint}/")
+            items = data.get(clave) if isinstance(data, dict) else None
+        except Exception as exc:
+            return [], str(exc)
+        return items if isinstance(items, list) else [], None
+
+    @staticmethod
+    def _ids_routers(routers):
+        ids = []
+        for router in routers or []:
+            router_id = _related_id(router.get("id")) if isinstance(router, dict) else router
+            if router_id is not None:
+                ids.append(router_id)
+        return ids
+
+    @staticmethod
     def get_colas_por_router(api, routers):
         """Colas simples por router para el desplegable de cola padre.
 
@@ -99,19 +125,48 @@ class PlanFormMixin(APIViewMixin):
         lista vacía para ese router: el formulario sigue funcionando y
         dejar la cola vacía hace que la API genere Plan-{perfil}.
         """
-        colas_por_router = {}
-        for router in routers or []:
-            router_id = _related_id(router.get("id")) if isinstance(router, dict) else router
-            if router_id is None:
-                continue
-            try:
-                data = api.get(f"routers/{router_id}/colas/")
-                colas = data.get("colas") if isinstance(data, dict) else None
-            except Exception:
-                colas = None
-            if not isinstance(colas, list):
-                colas = []
-            colas_por_router[str(router_id)] = [
+        return PlanFormMixin.get_catalogos_plan(api, routers)[0]["colas"]
+
+    @staticmethod
+    def get_direcciones_por_router(api, routers):
+        """Direcciones IP por router para el desplegable de direccion_local.
+
+        Lee GET routers/{id}/direcciones-ip/ de la API (/ip/address). Cada
+        entrada trae la interfaz y la IP sin máscara en "direccion": ese es
+        el valor que se guarda en el plan (el perfil PPPoE pide una IP en
+        local-address, no el nombre de la interfaz). Si el endpoint falla o
+        no hay valores, devuelve lista vacía: el campo queda opcional.
+        """
+        return PlanFormMixin.get_catalogos_plan(api, routers)[0]["direcciones"]
+
+    @staticmethod
+    def get_pools_por_router(api, routers):
+        """Pools por router para el desplegable de pool_remoto.
+
+        Lee GET routers/{id}/pools/ de la API (/ip/pool). Se guarda el
+        nombre del pool en el plan (remote-address del perfil PPPoE). Si el
+        endpoint falla o no hay valores, devuelve lista vacía: el campo
+        queda opcional.
+        """
+        return PlanFormMixin.get_catalogos_plan(api, routers)[0]["pools"]
+
+    @staticmethod
+    def get_catalogos_plan(api, routers):
+        """Los tres catálogos del formulario de plan, con sus fallos.
+
+        Devuelve (catalogos, fallos): catalogos es {"colas": {...},
+        "direcciones": {...}, "pools": {...}} por router, y fallos es
+        {str(router_id): {"colas": detalle, ...}} solo con los catálogos
+        que fallaron, para avisar al usuario en vez de dejar desplegables
+        vacíos en silencio. Un catálogo que falla nunca rompe el formulario.
+        Cada catálogo se pide una sola vez por router.
+        """
+        catalogos = {"colas": {}, "direcciones": {}, "pools": {}}
+        fallos = {}
+        for router_id in PlanFormMixin._ids_routers(routers):
+            clave = str(router_id)
+            colas, error = PlanFormMixin._catalogo_router(api, router_id, "colas", "colas")
+            catalogos["colas"][clave] = [
                 {
                     "nombre": cola.get("nombre") or cola.get("name"),
                     "target": cola.get("target") or "",
@@ -121,15 +176,50 @@ class PlanFormMixin(APIViewMixin):
                 for cola in colas
                 if isinstance(cola, dict) and (cola.get("nombre") or cola.get("name"))
             ]
-        return colas_por_router
+            if error:
+                fallos.setdefault(clave, {})["colas"] = error
+            direcciones, error = PlanFormMixin._catalogo_router(
+                api, router_id, "direcciones-ip", "direcciones"
+            )
+            catalogos["direcciones"][clave] = [
+                {
+                    "interfaz": item.get("interfaz") or item.get("interface") or "",
+                    "direccion": item.get("direccion") or "",
+                    "direccion_con_mascara": item.get("direccion_con_mascara") or "",
+                    "red": item.get("red") or item.get("network") or "",
+                }
+                for item in direcciones
+                if isinstance(item, dict) and item.get("direccion")
+            ]
+            if error:
+                fallos.setdefault(clave, {})["direcciones IP"] = error
+            pools, error = PlanFormMixin._catalogo_router(api, router_id, "pools", "pools")
+            catalogos["pools"][clave] = [
+                {
+                    "nombre": item.get("nombre") or item.get("name"),
+                    "rangos": item.get("rangos") or item.get("ranges") or "",
+                }
+                for item in pools
+                if isinstance(item, dict) and (item.get("nombre") or item.get("name"))
+            ]
+            if error:
+                fallos.setdefault(clave, {})["pools"] = error
+        return catalogos, fallos
 
     def build_payload(self, data):
         # Limpieza básica de texto
         nombre = data.get("nombre_perfil", "").strip()
         cola_padre = data.get("cola_padre", "").strip()
-        
+        direccion_local = (data.get("direccion_local") or "").strip()
+        pool_remoto = (data.get("pool_remoto") or "").strip()
+
         if not nombre:
             raise ValueError("Ingrese el nombre del perfil PPPoE.")
+        if direccion_local:
+            try:
+                ip_address(direccion_local)
+            except ValueError:
+                raise ValueError("Ingrese una dirección IP local válida.") from None
 
         # Conversiones básicas de tipos para que la API reciba lo que espera
         try:
@@ -146,6 +236,10 @@ class PlanFormMixin(APIViewMixin):
         return {
             "nombre_perfil": nombre,
             "cola_padre": cola_padre,
+            # Vacía = None: la API no toca el local-address del perfil que
+            # ya existe en el router. El pool es texto: vacío = "".
+            "direccion_local": direccion_local or None,
+            "pool_remoto": pool_remoto,
             "subida_mbps": subida,
             "bajada_mbps": bajada,
             "router": router,

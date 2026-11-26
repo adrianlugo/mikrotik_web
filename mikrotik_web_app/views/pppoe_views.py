@@ -5,6 +5,31 @@ from ..mixins import AuthenticatedAPIViewMixin, PlanFormMixin
 from ..utils import _related_id, _pppoe_payload
 
 
+def _advertencias_catalogo(routers, fallos):
+    """Avisos legibles cuando un catálogo del plan falló en la API.
+
+    fallos es {str(router_id): {nombre_catálogo: detalle}}. Sin esto, un
+    desplegable vacío parecería que el router no tiene valores, cuando en
+    realidad la API devolvió un error (por ejemplo 502 con el router sin
+    respuesta) o el endpoint no existe en esa versión de la API.
+    """
+    nombres = {}
+    for router in routers or []:
+        if isinstance(router, dict):
+            nombres[str(router.get("id"))] = (
+                router.get("nombre") or router.get("name") or router.get("ip_address") or str(router.get("id"))
+            )
+    advertencias = []
+    for router_id, catalogos in (fallos or {}).items():
+        nombre = nombres.get(str(router_id), str(router_id))
+        for catalogo, detalle in catalogos.items():
+            advertencias.append(
+                f"Router {nombre}: no se pudieron cargar {catalogo} ({detalle}). "
+                "Ese campo queda vacío y es opcional; el plan se puede guardar igualmente."
+            )
+    return advertencias
+
+
 class ClientesListView(AuthenticatedAPIViewMixin, TemplateView):
     template_name = "pppoe/clientes.html"
 
@@ -104,10 +129,19 @@ class PlanCrearView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
         try:
             api = self.api()
             context["routers"] = self.normalize_routers(api.get_list("routers/"))
-            context["colas_por_router"] = self.get_colas_por_router(api, context["routers"])
+            catalogos, fallos = self.get_catalogos_plan(api, context["routers"])
+            context["colas_por_router"] = catalogos["colas"]
+            context["direcciones_por_router"] = catalogos["direcciones"]
+            context["pools_por_router"] = catalogos["pools"]
+            context["catalogo_advertencias"] = _advertencias_catalogo(
+                context["routers"], fallos
+            )
         except Exception as exc:
             context["routers"] = []
             context["colas_por_router"] = {}
+            context["direcciones_por_router"] = {}
+            context["pools_por_router"] = {}
+            context["catalogo_advertencias"] = []
             context["api_error"] = str(exc)
             self.api_error(self.request, exc)
         return context
@@ -143,9 +177,23 @@ class PlanEditarView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             plan = api.get(f"planes/{plan_id}/")
             context["form_data"] = self.normalize_form_data(plan)
             context["routers"] = self.normalize_routers(api.get_list("routers/"))
-            context["colas_por_router"] = self.get_colas_por_router(api, context["routers"])
+            catalogos, fallos = self.get_catalogos_plan(api, context["routers"])
+            context["colas_por_router"] = catalogos["colas"]
+            context["direcciones_por_router"] = catalogos["direcciones"]
+            context["pools_por_router"] = catalogos["pools"]
+            context["catalogo_advertencias"] = _advertencias_catalogo(
+                context["routers"], fallos
+            )
         except Exception as exc:
-            context.update(form_data={}, routers=[], colas_por_router={}, api_error=str(exc))
+            context.update(
+                form_data={},
+                routers=[],
+                colas_por_router={},
+                direcciones_por_router={},
+                pools_por_router={},
+                catalogo_advertencias=[],
+                api_error=str(exc),
+            )
             self.api_error(self.request, exc)
         return context
 
@@ -185,14 +233,21 @@ class ConexionActivaView(AuthenticatedAPIViewMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         try:
-            active = self.api().get("clientes-pppoe/activos/")
-            context.update(
-                conexiones=active.get("conexiones", []),
-                total_conectados=active.get("total_conectados", 0),
-                router_nombre=active.get("router") or active.get("router_nombre") or "Desconocido",
-            )
+            from .dashboard_views import _resumen_activos
+
+            context.update(_resumen_activos(self.api().get("clientes-pppoe/activos/")))
+            context["activos_no_disponibles"] = False
         except Exception as exc:
-            context.update(conexiones=[], total_conectados=0, api_error=str(exc))
+            # Sin inventar un 0 de conectados: total en None y la plantilla
+            # muestra "No disponible" y el error de la API.
+            context.update(
+                conexiones=[],
+                total_conectados=None,
+                router_nombre="",
+                activos_errores=[],
+                activos_no_disponibles=True,
+                api_error=str(exc),
+            )
             self.api_error(self.request, exc)
         return context
 

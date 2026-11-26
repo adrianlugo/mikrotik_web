@@ -144,6 +144,27 @@ class MikrotikAPIClient:
                     return data[key]
         return []
 
+    # Rutas candidatas para revocar el token DRF, en orden. La API aún no
+    # tiene endpoint de revocación (lo está añadiendo otro trabajo en
+    # paralelo): si responde 404/405 en todas, se devuelve False y quien
+    # llama solo limpia la sesión local. Si la API termina usando otra
+    # ruta, basta con cambiar esta tupla. Un 401 significa que el token
+    # ya no vale, así que también cuenta como revocado.
+    RUTAS_REVOCACION_TOKEN = ("token/revocar/", "logout/")
+
+    def revocar_token(self):
+        for ruta in self.RUTAS_REVOCACION_TOKEN:
+            try:
+                self.post(ruta)
+                return True
+            except APIError as exc:
+                if exc.status_code in (404, 405):
+                    continue
+                if exc.status_code == 401:
+                    return True
+                raise
+        return False
+
     def get(self, path):
         return self.request("GET", path)
 

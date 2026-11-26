@@ -12,6 +12,17 @@
 <div class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ api_error }}</div>
 {% endif %}
 
+{% if catalogo_advertencias %}
+<div class="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+    <p class="font-semibold">No se pudieron cargar algunos datos del router</p>
+    <ul class="mt-2 list-disc pl-5">
+        {% for advertencia in catalogo_advertencias %}
+        <li>{{ advertencia }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <div class="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
     <form method="post" class="grid gap-5 md:grid-cols-2">
         {% csrf_token %}
@@ -38,6 +49,22 @@
             <span class="mt-1 block text-xs text-gray-500">Elige una cola simple del router elegido. Si la dejas vacía, la API crea una cola padre llamada Plan-{nombre del perfil}.</span>
         </label>
 
+        <label class="text-sm font-medium text-gray-700">
+            Dirección local (local-address)
+            <select name="direccion_local" id="id_direccion_local" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Sin dirección local (opcional)</option>
+            </select>
+            <span class="mt-1 block text-xs text-gray-500">IP del router para el local-address del perfil PPPoE (normalmente la del loopback). Si la dejas vacía, la API no toca el valor que ya tenga el perfil.</span>
+        </label>
+
+        <label class="text-sm font-medium text-gray-700">
+            Pool remoto (remote-address)
+            <select name="pool_remoto" id="id_pool_remoto" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Sin pool (opcional)</option>
+            </select>
+            <span class="mt-1 block text-xs text-gray-500">Pool del router del que salen las IPs de los clientes. Si lo dejas vacío, la API no toca el valor que ya tenga el perfil.</span>
+        </label>
+
         <label class="text-sm font-medium text-gray-700 md:col-span-2">
             Router MikroTik
             <select name="router" required class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
@@ -60,65 +87,119 @@
 
 {% block extra_js %}
 {{ colas_por_router|json_script:"colas-por-router" }}
+{{ direcciones_por_router|json_script:"direcciones-por-router" }}
+{{ pools_por_router|json_script:"pools-por-router" }}
 <script>
 (function () {
-    var datos = {};
-    try {
-        datos = JSON.parse(document.getElementById("colas-por-router").textContent || "{}") || {};
-    } catch (e) {
-        datos = {};
+    function leer(id) {
+        var el = document.getElementById(id);
+        if (!el) {
+            return {};
+        }
+        try {
+            return JSON.parse(el.textContent || "{}") || {};
+        } catch (e) {
+            return {};
+        }
     }
+    var datosColas = leer("colas-por-router");
+    var datosDirecciones = leer("direcciones-por-router");
+    var datosPools = leer("pools-por-router");
     var routerSelect = document.querySelector('select[name="router"]');
-    var colaSelect = document.getElementById("id_cola_padre");
-    if (!routerSelect || !colaSelect) {
+    if (!routerSelect) {
         return;
     }
-    var seleccionada = "{{ form_data.cola_padre|default:''|escapejs }}";
-    function etiqueta(cola) {
-        var texto = cola.nombre || "";
-        if (cola.max_limit) {
-            texto += " — " + cola.max_limit;
+    function rellenar(select, datos, seleccionada, vacia, etiqueta, valor) {
+        if (!select) {
+            return;
         }
-        if (cola.target) {
-            texto += " (" + cola.target + ")";
-        }
-        return texto;
-    }
-    function rellenar() {
-        var colas = datos[routerSelect.value] || datos[String(routerSelect.value)] || [];
-        var actual = colaSelect.value || seleccionada;
-        colaSelect.innerHTML = "";
-        var auto = document.createElement("option");
-        auto.value = "";
-        auto.textContent = "Generar automáticamente (Plan-{perfil})";
-        colaSelect.appendChild(auto);
+        var items = datos[routerSelect.value] || datos[String(routerSelect.value)] || [];
+        var actual = select.value || seleccionada;
+        select.innerHTML = "";
+        var opcionVacia = document.createElement("option");
+        opcionVacia.value = "";
+        opcionVacia.textContent = vacia;
+        select.appendChild(opcionVacia);
         var presente = false;
-        colas.forEach(function (cola) {
-            if (!cola.nombre) {
+        items.forEach(function (item) {
+            var v = valor(item);
+            if (!v) {
                 return;
             }
             var opcion = document.createElement("option");
-            opcion.value = cola.nombre;
-            opcion.textContent = etiqueta(cola);
-            if (cola.nombre === actual) {
+            opcion.value = v;
+            opcion.textContent = etiqueta(item);
+            if (String(v) === String(actual)) {
                 opcion.selected = true;
                 presente = true;
             }
-            colaSelect.appendChild(opcion);
+            select.appendChild(opcion);
         });
         if (actual && !presente) {
+            // El valor guardado ya no está en el router (o el catálogo no
+            // cargó): se conserva como opción para no borrarlo al guardar.
             var extra = document.createElement("option");
             extra.value = actual;
             extra.textContent = actual + " (no está en el router)";
             extra.selected = true;
-            colaSelect.appendChild(extra);
+            select.appendChild(extra);
         }
         if (!actual) {
-            colaSelect.value = "";
+            select.value = "";
         }
     }
-    routerSelect.addEventListener("change", rellenar);
-    rellenar();
+    function rellenarTodo() {
+        rellenar(
+            document.getElementById("id_cola_padre"),
+            datosColas,
+            "{{ form_data.cola_padre|default:''|escapejs }}",
+            "Generar automáticamente (Plan-{perfil})",
+            function (cola) {
+                var texto = cola.nombre || "";
+                if (cola.max_limit) {
+                    texto += " — " + cola.max_limit;
+                }
+                if (cola.target) {
+                    texto += " (" + cola.target + ")";
+                }
+                return texto;
+            },
+            function (cola) { return cola.nombre; }
+        );
+        rellenar(
+            document.getElementById("id_direccion_local"),
+            datosDirecciones,
+            "{{ form_data.direccion_local|default:''|escapejs }}",
+            "Sin dirección local (opcional)",
+            function (item) {
+                var texto = item.direccion || "";
+                if (item.interfaz) {
+                    texto = item.interfaz + " — " + texto;
+                }
+                if (item.red) {
+                    texto += " (" + item.red + ")";
+                }
+                return texto;
+            },
+            function (item) { return item.direccion; }
+        );
+        rellenar(
+            document.getElementById("id_pool_remoto"),
+            datosPools,
+            "{{ form_data.pool_remoto|default:''|escapejs }}",
+            "Sin pool (opcional)",
+            function (item) {
+                var texto = item.nombre || "";
+                if (item.rangos) {
+                    texto += " — " + item.rangos;
+                }
+                return texto;
+            },
+            function (item) { return item.nombre; }
+        );
+    }
+    routerSelect.addEventListener("change", rellenarTodo);
+    rellenarTodo();
 })();
 </script>
 {% endblock %}

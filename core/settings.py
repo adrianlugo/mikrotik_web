@@ -153,11 +153,58 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# En producción (gunicorn) Django no sirve los estáticos: collectstatic los
+# junta aquí. En local con runserver no hace falta ejecutar collectstatic.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 # Esto le dice a Django que busque archivos estáticos globales si es necesario
 STATICFILES_DIRS = []
 
+# Logs a archivo (además de consola) para poder revisar qué pasó sin tener
+# la terminal delante. El directorio se crea solo si no existe; logs/ está
+# en .gitignore. Ver docs/despliegue.md.
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {
+            'format': '{asctime} {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'consola': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'archivo': {
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'django.log',
+            'formatter': 'simple',
+            'encoding': 'utf-8',
+        },
+    },
+    'root': {
+        'handlers': ['consola', 'archivo'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['consola', 'archivo'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
 # Configuración del cliente web para la API REST de MikroTik.
-MIKROTIK_API_URL = os.getenv("MIKROTIK_API_URL", "http://localhost:8000/api").rstrip("/")
+# Por defecto 127.0.0.1, igual que en .env.example (antes settings.py usaba
+# localhost y .env.example 127.0.0.1; es la misma máquina, pero ahora los
+# dos dicen lo mismo).
+MIKROTIK_API_URL = os.getenv("MIKROTIK_API_URL", "http://127.0.0.1:8000/api").rstrip("/")
 MIKROTIK_API_TIMEOUT = float(os.getenv("MIKROTIK_API_TIMEOUT", "5"))
 MIKROTIK_API_TOKEN = os.getenv("MIKROTIK_API_TOKEN", "")
 MIKROTIK_API_USERNAME = os.getenv("MIKROTIK_API_USERNAME", "")

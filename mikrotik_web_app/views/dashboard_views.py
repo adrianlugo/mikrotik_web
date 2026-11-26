@@ -5,25 +5,90 @@ from ..mixins import AuthenticatedAPIViewMixin
 from ..utils import _pppoe_payload
 
 
+def _nombres_routers_activos(active):
+    """Nombres de router de GET clientes-pppoe/activos/.
+
+    La API devuelve `routers` como lista de nombres (no `router` ni
+    `router_nombre`): leer esas claves inexistentes mostraba "Desconocido"
+    aunque hubiera datos. Se aceptan también dicts con nombre/name y las
+    claves antiguas por compatibilidad.
+    """
+    routers = active.get("routers") if isinstance(active, dict) else None
+    nombres = []
+    if isinstance(routers, list):
+        for router in routers:
+            if isinstance(router, dict):
+                nombre = router.get("nombre") or router.get("name") or router.get("ip_address")
+            else:
+                nombre = router
+            if nombre:
+                nombres.append(str(nombre))
+    if not nombres and isinstance(active, dict):
+        nombre = active.get("router_nombre") or active.get("router")
+        if isinstance(nombre, dict):
+            nombre = nombre.get("nombre") or nombre.get("name")
+        if nombre:
+            nombres.append(str(nombre))
+    return nombres
+
+
+def _resumen_activos(active):
+    """Resumen honesto de las sesiones activas.
+
+    total_conectados es el de la API, y si no viene se calcula con la
+    lista de conexiones. `errores` es la lista de routers que la API no
+    pudo consultar: con errores, el número puede estar incompleto.
+    """
+    conexiones = active.get("conexiones") or []
+    total = active.get("total_conectados")
+    if not isinstance(total, int):
+        total = len(conexiones)
+    errores = active.get("errores") or []
+    return {
+        "router_nombre": ", ".join(_nombres_routers_activos(active)),
+        "routers_activos": _nombres_routers_activos(active),
+        "total_conectados": total,
+        "conexiones": conexiones,
+        "activos_errores": errores if isinstance(errores, list) else [],
+    }
+
+
 class DashboardIndexView(AuthenticatedAPIViewMixin, TemplateView):
     template_name = "pppoe/index.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update({"planes": [], "routers": [], "conexiones": [], "total_conectados": 0})
+        context.update(
+            {
+                "planes": [],
+                "routers": [],
+                "conexiones": [],
+                "total_conectados": None,
+                "total_clientes": 0,
+                "router_nombre": "",
+                "activos_errores": [],
+                "activos_no_disponibles": False,
+            }
+        )
         api = self.api()
         try:
             active = api.get("clientes-pppoe/activos/")
-            context["router_nombre"] = active.get("router") or active.get("router_nombre") or "Desconocido"
-            context["total_conectados"] = active.get("total_conectados", 0)
-            context["conexiones"] = active.get("conexiones", [])
+            context.update(_resumen_activos(active))
         except Exception as exc:
+            # La API falló (por ejemplo 502 con el router sin respuesta):
+            # no se inventa un 0 de conectados. total_conectados queda en
+            # None y la plantilla muestra "No disponible" y el error.
+            context["activos_no_disponibles"] = True
             context["api_error"] = str(exc)
             self.api_error(self.request, exc)
             if getattr(exc, "status_code", None) == 401:
                 return context
 
-        for key, path in (("planes", "planes/"), ("routers", "routers/")):
+        for key, path in (
+            ("planes", "planes/"),
+            ("routers", "routers/"),
+            ("clientes", "clientes-pppoe/"),
+        ):
             try:
                 context[key] = api.get_list(path)
             except Exception as exc:
@@ -33,7 +98,8 @@ class DashboardIndexView(AuthenticatedAPIViewMixin, TemplateView):
                     break
         context["planes"] = self.normalize_plans(context["planes"])
         context["routers"] = self.normalize_routers(context["routers"])
-        context["total_clientes"] = context.get("total_clientes", 0)
+        # Total real de clientes PPPoE registrados en la API, no un 0 fijo.
+        context["total_clientes"] = len(context.get("clientes") or [])
         context["total_plan_count"] = len(context["planes"])
         context["total_router_count"] = len(context["routers"])
         return context

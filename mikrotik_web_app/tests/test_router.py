@@ -2,6 +2,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 from django.test.client import Client
+from mikrotik_web_app.api_client import APIError
 
 class RouterViewsTestCase(TestCase):
     def setUp(self):
@@ -155,6 +156,24 @@ class RouterViewsTestCase(TestCase):
         self.assertContains(response, "Cliente 20M")
         self.assertContains(response, "20M/20M")
         self.assertContains(response, "192.168.88.50/32")
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
+    def test_router_consumption_shows_error_when_api_fails(self, get):
+        # Si la API devuelve 502, no se muestra "No se encontraron colas".
+        get.side_effect = [
+            {
+                "id": 4,
+                "nombre": "CHR Principal",
+                "ip_address": "192.168.88.1",
+            },
+            APIError("El router no responde.", status_code=502),
+        ]
+
+        response = self.client.get(reverse("router_consumo", args=[4]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se pudo consultar el consumo")
+        self.assertNotContains(response, "No se encontraron colas simples")
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
     def test_router_dhcp_leases_normalizes_mac_address(self, get):

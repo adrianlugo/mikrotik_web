@@ -2,6 +2,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 from django.test.client import Client
+from mikrotik_web_app.api_client import APIError
 
 class AuthViewsTestCase(TestCase):
     def setUp(self):
@@ -39,6 +40,35 @@ class AuthViewsTestCase(TestCase):
 
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("mikrotik_api_token", self.client.session)
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post", return_value={})
+    def test_logout_revokes_token_when_api_allows_it(self, post):
+        session = self.client.session
+        session["mikrotik_api_token"] = "token-de-prueba"
+        session.save()
+
+        response = self.client.post(reverse("logout"))
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("mikrotik_api_token", self.client.session)
+        post.assert_called_once_with("token/revocar/")
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post", side_effect=APIError("No encontrado.", status_code=404))
+    def test_logout_still_clears_session_when_api_has_no_revoke_endpoint(self, post):
+        # La API aún no tiene endpoint de revocación (404 en las rutas
+        # candidatas): el cierre de sesión local no debe fallar por eso.
+        session = self.client.session
+        session["mikrotik_api_token"] = "token-de-prueba"
+        session.save()
+
+        response = self.client.post(reverse("logout"))
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("mikrotik_api_token", self.client.session)
+        self.assertEqual(
+            [call.args[0] for call in post.call_args_list],
+            ["token/revocar/", "logout/"],
+        )
 
     def test_dashboard_redirects_to_login_without_session(self):
         self.client.cookies.clear()

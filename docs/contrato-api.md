@@ -9,6 +9,7 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | Método | Endpoint | Uso en la web |
 |---|---|---|
 | `POST` | `/api/token/` | Inicio de sesión web. Devuelve solo `{"token": "..."}` (sin usuario ni rol). |
+| `POST` | `/api/token/revocar/` | Cierre de sesión web: intento de revocar el token. **Pendiente en la API** (lo está añadiendo otro trabajo en paralelo): si la API responde 404/405, la web solo limpia la sesión local. Como alternativa la web prueba `POST /api/logout/`. Si la API usa otra ruta, se cambia `RUTAS_REVOCACION_TOKEN` en `api_client.py`. |
 
 ## Routers
 
@@ -24,8 +25,8 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | `POST` | `/api/routers/{id}/reparar-colas/` | Reparación de colas de clientes DHCP/IP fija. |
 | `GET` | `/api/routers/{id}/consumo/` | Consumo de colas (`router`, `total_colas`, `colas`). |
 | `GET` | `/api/routers/{id}/dhcp-leases/` | Leases DHCP. |
-| `GET` | `/api/routers/{id}/direcciones-ip/` | Desplegable de `direccion_local` (no usado aún en el formulario web). |
-| `GET` | `/api/routers/{id}/pools/` | Desplegable de `pool_remoto` (no usado aún en el formulario web). |
+| `GET` | `/api/routers/{id}/direcciones-ip/` | Desplegable de `direccion_local` en el formulario de plan. Devuelve `{"direcciones": [{"interfaz", "direccion", "direccion_con_mascara", "red"}]}`; se guarda `direccion` (la IP sin máscara). |
+| `GET` | `/api/routers/{id}/pools/` | Desplegable de `pool_remoto` en el formulario de plan. Devuelve `{"pools": [{"nombre", "rangos"}]}`; se guarda `nombre`. |
 | `GET` | `/api/routers/{id}/colas/` | Desplegable de `cola_padre` del plan. |
 
 ## Planes
@@ -38,9 +39,7 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | `PATCH` | `/api/planes/{id}/` | Guardado de la edición. |
 | `DELETE` | `/api/planes/{id}/` | Eliminación. |
 
-Campos que envía la web: `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router` y `cola_padre` (desplegable por router; vacío = la API genera `Plan-{perfil}`).
-
-Campos que la API acepta y la web **no** envía: `direccion_local` y `pool_remoto`. Solo se pueden poner por la API directamente, en el admin de la API o importándolos con la sincronización desde un perfil ya creado en el router.
+Campos que envía la web: `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre` (desplegable por router; vacío = la API genera `Plan-{perfil}`), `direccion_local` (desplegable por router; vacía = `null`, la API no toca el local-address del perfil) y `pool_remoto` (desplegable por router; vacío = `""`, la API no toca el remote-address del perfil). La web valida que `direccion_local`, si se pone, sea una IP válida.
 
 ## Clientes PPPoE
 
@@ -51,7 +50,7 @@ Campos que la API acepta y la web **no** envía: `direccion_local` y `pool_remot
 | `GET` | `/api/clientes-pppoe/{id}/` | Edición. |
 | `PATCH` | `/api/clientes-pppoe/{id}/` | Guardado (sin `password_pppoe` si se deja vacía, para conservarla). |
 | `DELETE` | `/api/clientes-pppoe/{id}/` | Eliminación. |
-| `GET` | `/api/clientes-pppoe/activos/` | Conexiones activas. Devuelve `routers` (lista), `total_conectados`, `conexiones` y `errores`. |
+| `GET` | `/api/clientes-pppoe/activos/` | Conexiones activas. Devuelve `routers` (lista de nombres), `total_conectados`, `conexiones` y `errores` (routers que no se pudieron consultar; el total puede estar incompleto). |
 | `POST` | `/api/clientes-pppoe/{id}/cambiar-estado/` | Activación/suspensión, con `{"estado": "activo"}` o `{"estado": "suspendido"}`. |
 | `POST` | `/api/clientes-pppoe/{id}/ping/` | Ping desde el router. |
 | `POST` | `/api/clientes-pppoe/{id}/patear/` | Desconexión de la sesión. |
@@ -87,6 +86,14 @@ No existen en la API `POST /api/clientes-pppoe/sincronizar/` ni `/importar-desde
 ## Endpoints que no existen
 
 - `GET /api/interfaces/` y `GET /api/enlaces-isp/`: no existen en la API. Por eso las páginas "Interfaces" y "Enlaces ISP" se quitaron de la web.
+
+## Errores honestos
+
+Cuando la API devuelve un error en vez de una lista (por ejemplo 502 con el router sin respuesta), la web no muestra una lista vacía ni un 0 como si todo fuera bien:
+
+- Dashboard y conexiones activas: si `GET /api/clientes-pppoe/activos/` falla, el total de conectados muestra "No disponible" y la lista dice que no se pudo consultar; si la API trae `errores`, se listan los routers que no se pudieron consultar y se avisa de que el total puede estar incompleto.
+- Formulario de plan: si un catálogo (`colas`, `direcciones-ip`, `pools`) falla, el formulario avisa qué catálogo y de qué router no cargó, y sigue funcionando con ese campo vacío y opcional.
+- Consumo y leases del router: si la consulta falla, la tabla dice que no se pudo consultar el router, no "No se encontraron...".
 
 ## Formato de las respuestas
 
