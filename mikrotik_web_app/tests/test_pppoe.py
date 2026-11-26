@@ -206,21 +206,90 @@ class PPPoEViewsTestCase(TestCase):
     ])
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
     def test_edit_plan_page_selects_related_router(self, get, get_list):
-        get.return_value = {
-            "id": 8,
-            "nombre_perfil": "Plan 20M",
-            "cola_padre": "Plan-20M",
-            "subida_mbps": 20,
-            "bajada_mbps": 20,
-            "router": 4,
-        }
+        get.side_effect = [
+            {
+                "id": 8,
+                "nombre_perfil": "Plan 20M",
+                "cola_padre": "Plan-20M",
+                "subida_mbps": 20,
+                "bajada_mbps": 20,
+                "router": 4,
+            },
+            {"router": "CHR Principal", "total": 1, "colas": [
+                {"nombre": "Plan-20M", "target": "", "max-limit": "20M/20M", "parent": "none"},
+            ]},
+        ]
 
         response = self.client.get(reverse("plan_editar", args=[8]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Editar plan de internet")
         self.assertContains(response, 'value="4" selected')
-        get.assert_called_once_with("planes/8/")
+        # La cola padre es un desplegable con la cola del router y la
+        # opción de generarla automáticamente; la guardada queda elegida.
+        self.assertContains(response, "Plan-20M")
+        self.assertContains(response, "Generar autom")
+        self.assertEqual(
+            [call.args[0] for call in get.call_args_list],
+            ["planes/8/", "routers/4/colas/"],
+        )
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
+        {"id": 4, "nombre": "CHR Principal", "ip_address": "192.168.88.1"},
+    ])
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
+    def test_create_plan_page_shows_colas_select(self, get, get_list):
+        get.return_value = {"router": "CHR Principal", "total": 2, "colas": [
+            {"nombre": "Plan-3mb", "target": "10.0.0.0/24", "max-limit": "3M/3M", "parent": "none"},
+            {"nombre": "Cola-Total", "target": "", "max-limit": "50M/50M", "parent": "none"},
+        ]}
+
+        response = self.client.get(reverse("plan_crear"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nuevo plan de internet")
+        self.assertContains(response, "Plan-3mb")
+        self.assertContains(response, "Cola-Total")
+        self.assertContains(response, "Generar autom")
+        get.assert_called_once_with("routers/4/colas/")
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
+        {"id": 4, "nombre": "CHR Principal", "ip_address": "192.168.88.1"},
+    ])
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get", side_effect=Exception("API sin endpoint de colas"))
+    def test_create_plan_page_works_without_colas_endpoint(self, get, get_list):
+        # Si la API es anterior al endpoint de colas (o no responde), el
+        # formulario sigue funcionando: solo queda la opción automática.
+        response = self.client.get(reverse("plan_crear"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Generar autom")
+        self.assertNotContains(response, "Plan-3mb")
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post")
+    def test_create_plan_without_cola_padre_posts_empty(self, post):
+        response = self.client.post(
+            reverse("plan_crear"),
+            {
+                "nombre_perfil": "Plan 30M",
+                "cola_padre": "",
+                "subida_mbps": "30",
+                "bajada_mbps": "30",
+                "router": "4",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planes_list"), fetch_redirect_response=False)
+        post.assert_called_once_with(
+            "planes/",
+            {
+                "nombre_perfil": "Plan 30M",
+                "cola_padre": "",
+                "subida_mbps": 30,
+                "bajada_mbps": 30,
+                "router": 4,
+            },
+        )
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.patch")
     def test_edit_plan_action(self, patch_client):

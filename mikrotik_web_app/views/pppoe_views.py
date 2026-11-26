@@ -102,9 +102,12 @@ class PlanCrearView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context.update(form_action="crear", form_data={"router_id": None})
         try:
-            context["routers"] = self.normalize_routers(self.api().get_list("routers/"))
+            api = self.api()
+            context["routers"] = self.normalize_routers(api.get_list("routers/"))
+            context["colas_por_router"] = self.get_colas_por_router(api, context["routers"])
         except Exception as exc:
             context["routers"] = []
+            context["colas_por_router"] = {}
             context["api_error"] = str(exc)
             self.api_error(self.request, exc)
         return context
@@ -140,8 +143,9 @@ class PlanEditarView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             plan = api.get(f"planes/{plan_id}/")
             context["form_data"] = self.normalize_form_data(plan)
             context["routers"] = self.normalize_routers(api.get_list("routers/"))
+            context["colas_por_router"] = self.get_colas_por_router(api, context["routers"])
         except Exception as exc:
-            context.update(form_data={}, routers=[], api_error=str(exc))
+            context.update(form_data={}, routers=[], colas_por_router={}, api_error=str(exc))
             self.api_error(self.request, exc)
         return context
 

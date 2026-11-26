@@ -90,6 +90,39 @@ class PlanFormMixin(APIViewMixin):
         normalized["router_id"] = _related_form_id(data.get("router"))
         return normalized
 
+    @staticmethod
+    def get_colas_por_router(api, routers):
+        """Colas simples por router para el desplegable de cola padre.
+
+        Lee GET routers/{id}/colas/ de la API. Si la API no responde, el
+        router no tiene colas o la API es anterior a ese endpoint, devuelve
+        lista vacía para ese router: el formulario sigue funcionando y
+        dejar la cola vacía hace que la API genere Plan-{perfil}.
+        """
+        colas_por_router = {}
+        for router in routers or []:
+            router_id = _related_id(router.get("id")) if isinstance(router, dict) else router
+            if router_id is None:
+                continue
+            try:
+                data = api.get(f"routers/{router_id}/colas/")
+                colas = data.get("colas") if isinstance(data, dict) else None
+            except Exception:
+                colas = None
+            if not isinstance(colas, list):
+                colas = []
+            colas_por_router[str(router_id)] = [
+                {
+                    "nombre": cola.get("nombre") or cola.get("name"),
+                    "target": cola.get("target") or "",
+                    "max_limit": cola.get("max-limit") or cola.get("max_limit") or "",
+                    "parent": cola.get("parent") or "",
+                }
+                for cola in colas
+                if isinstance(cola, dict) and (cola.get("nombre") or cola.get("name"))
+            ]
+        return colas_por_router
+
     def build_payload(self, data):
         # Limpieza básica de texto
         nombre = data.get("nombre_perfil", "").strip()
