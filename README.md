@@ -10,7 +10,7 @@ Aplicación web desarrollada con Django para operar la API REST de administraci�
 - Edición de clientes con conservación opcional de la contraseña existente.
 - Listado, activación/suspensión, ping, desconexión y eliminación de clientes PPPoE.
 - Gestión de clientes DHCP/IP fija (reserva, cola, reparación y eliminación).
-- Consulta de planes de velocidad, con la cola padre como desplegable.
+- Consulta de planes de velocidad, con la cola padre, la dirección local y el pool remoto como desplegables por router.
 - Vista dedicada de conexiones activas.
 - Routers: inventario, detalle, verificación de conexión, sincronización, reparación de colas, consumo y leases DHCP.
 - Facturas y pagos.
@@ -34,7 +34,7 @@ mikrotik_web_app/
 │   ├── pppoe/         index (dashboard), clientes, planes, conexiones
 │   ├── network/       clientes_red, routers, router_detalle, router_monitoreo
 │   └── billing/       facturas, pagos
-└── tests/             Pruebas de integración web (51 tests)
+└── tests/             Pruebas de integración web (63 tests)
 
 core/
 ├── settings.py        Configuración Django y variables de API
@@ -70,6 +70,8 @@ python manage.py runserver 8001
 
 Abra `http://127.0.0.1:8001/`.
 
+Esto es el uso en local, en su PC. Ver [Despliegue y copia de seguridad](docs/despliegue.md) para la copia de seguridad sencilla y para la opción de producción (gunicorn) cuando haya un servidor; nada de eso es requisito para usar la web así.
+
 La API corre en el puerto 8000 y la web en el 8001: no pueden correr las dos en el mismo puerto en la misma máquina. El `migrate` crea las tablas propias de Django (sesiones y admin); la web no tiene modelos propios que migrar.
 
 ## Configuración
@@ -91,7 +93,7 @@ $env:MIKROTIK_API_PASSWORD="clave"
 | `DJANGO_SECRET_KEY` | (sin valor) | Clave secreta de Django. Obligatoria en producción; sin ella la app no arranca con `DEBUG=false`. La clave anterior, que estaba escrita en `settings.py`, debe rotarse: ya está en el historial de Git y hay que considerarla expuesta. Se genera con `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` |
 | `DJANGO_DEBUG` | `false` | Activa el modo depuración. Solo `true` en desarrollo local |
 | `DJANGO_ALLOWED_HOSTS` | (vacío; en desarrollo, `127.0.0.1,localhost`) | Dominios permitidos, separados por comas |
-| `MIKROTIK_API_URL` | `http://localhost:8000/api` en `settings.py` (`http://127.0.0.1:8000/api` en `.env.example`; ambas son la misma máquina) | Base de la API REST |
+| `MIKROTIK_API_URL` | `http://127.0.0.1:8000/api` (igual en `settings.py` y en `.env.example`) | Base de la API REST |
 | `MIKROTIK_API_TIMEOUT` | `5` | Tiempo máximo por petición, en segundos |
 | `MIKROTIK_API_TOKEN` | vacío | Token DRF para autenticación `Token ...` |
 | `MIKROTIK_API_USERNAME` | vacío | Usuario para solicitar el token a `/api/token/` |
@@ -106,6 +108,8 @@ El inicio de sesión web (`/web/login/`) pide usuario y contraseña a la API (`P
 Las vistas operativas requieren iniciar sesión en la interfaz: sin token en sesión ni credenciales configuradas, redirigen a `/web/login/`.
 
 El rol que se guarda en sesión es solo informativo: el endpoint de token de la API devuelve solo `{"token": "..."}`, sin usuario ni rol, así que la web siempre guarda `Rol administrado por la API`. Quien aplica los roles (Administrador, Técnico, Solo lectura) es la API; la web no restringe páginas por rol.
+
+Al cerrar sesión (`/web/logout/`, POST), la web intenta revocar el token DRF en la API (`POST /api/token/revocar/`, y como alternativa `POST /api/logout/`). La API aún no tiene endpoint de revocación (lo está añadiendo otro trabajo en paralelo): si responde 404/405, la web solo limpia la sesión local y el cierre de sesión funciona igual; el token seguiría valiendo en la API hasta que ese endpoint exista. Si la API termina usando otra ruta, basta con cambiar `RUTAS_REVOCACION_TOKEN` en `api_client.py`.
 
 ## Rutas web
 
@@ -161,8 +165,7 @@ Ver [Contrato con la API](docs/contrato-api.md) para la lista completa de endpoi
 
 Resumen:
 
-- Planes: `GET/POST /api/planes/`, con `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router` y `cola_padre` como desplegable (alimentado por `GET /api/routers/{id}/colas/`; vacío = la API genera `Plan-{perfil}`).
-- **Los campos `direccion_local` y `pool_remoto` del plan no están en el formulario web**: solo se pueden poner por la API directamente, en el admin de la API o importándolos con la sincronización desde un perfil ya creado en el router. Es trabajo pendiente de la web, no un error de la API.
+- Planes: `GET/POST /api/planes/`, con `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre`, `direccion_local` y `pool_remoto`. Los tres últimos son desplegables por router: `cola_padre` por `GET /api/routers/{id}/colas/`, `direccion_local` por `GET /api/routers/{id}/direcciones-ip/` (se guarda la IP, no la interfaz) y `pool_remoto` por `GET /api/routers/{id}/pools/` (se guarda el nombre del pool). Los tres son opcionales: vacíos, `cola_padre` hace que la API genere `Plan-{perfil}`, y `direccion_local`/`pool_remoto` hacen que la API no toque el valor que ya tenga el perfil. Si un catálogo falla (por ejemplo 502 con el router sin respuesta), el formulario avisa y sigue funcionando con ese campo vacío.
 - Clientes PPPoE: `GET/POST /api/clientes-pppoe/`, estado, ping y desconexión.
 - Clientes DHCP/IP fija: `GET/POST /api/clientes-red/`, con su cola y reparación.
 - Routers: CRUD y acciones `verificar-conexion`, `sincronizar`, `reparar-colas`, `consumo` y `dhcp-leases`.
@@ -200,10 +203,14 @@ python manage.py test
 python manage.py runserver 8001
 ```
 
+`runserver` es el uso normal en la PC (ver [Despliegue y copia de seguridad](docs/despliegue.md)): la web corre en local en el puerto 8001 y no hace falta montar un servidor. Ese documento explica también la copia de seguridad sencilla (copiar `db.sqlite3` y guardar el `.env` aparte) y, como opción para cuando haya un servidor, cómo levantarla con gunicorn (`collectstatic` incluido) en vez de runserver.
+
 ## Problemas conocidos (no corregidos en este cambio)
 
-- El dashboard muestra el nombre del router como "Ninguno": el endpoint `GET /api/clientes-pppoe/activos/` devuelve `routers` (una lista), no `router` ni `router_nombre`, y el dashboard lee esas claves inexistentes. El total de conectados y la lista de sesiones sí se muestran bien.
-- La suite tiene 51 tests; 1 fallo preexistente y ajeno a la documentación: `test_create_invoice`, dependiente de la fecha.
+- La suite tiene 63 tests; 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main). El workflow de CI (`check` + tests en cada PR) sale en rojo por ese test hasta que se arregle aparte.
+- La revocación del token al cerrar sesión queda pendiente de la API: la web ya intenta `POST /api/token/revocar/` (o `POST /api/logout/`) y tolera que no exista, pero mientras la API no tenga ese endpoint el token sigue valiendo después de cerrar sesión.
+- La cola padre capa el total del plan a la velocidad del plan: `asegurar_cola_padre()` en la API pone a la cola padre el mismo límite del plan. Falta decidir el total del proveedor y si hay una cola global o una por plan. Sin cambiar la lógica, solo documentado.
+- Todo se validó con mocks, nunca contra un router real con clientes de verdad.
 
 ## Estructura futura
 
