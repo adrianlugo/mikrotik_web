@@ -51,7 +51,16 @@ class LoginView(APIViewMixin, TemplateView):
         return "Rol administrado por la API"
 
 
-class LogoutView(View):
+class LogoutView(APIViewMixin, View):
     def post(self, request, *args, **kwargs):
+        # Mejor esfuerzo: si la API ya permite revocar el token, se revoca
+        # para que no siga valiendo después de cerrar sesión. Si la API aún
+        # no tiene ese endpoint (404/405) o no responde, se cierra la sesión
+        # local igualmente: el cierre de sesión nunca debe fallar por eso.
+        if request.session.get("mikrotik_api_token"):
+            try:
+                self.api(request=request).revocar_token()
+            except Exception:
+                pass
         clear_api_session(request)
         return redirect("login")
