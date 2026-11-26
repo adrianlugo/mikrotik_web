@@ -153,7 +153,7 @@ class RouterConsumoView(AuthenticatedAPIViewMixin, TemplateView):
 
     def get_context_data(self, router_id, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(router_id=router_id, router={}, consumo=[], total=0, tipo="consumo")
+        context.update(router_id=router_id, router={}, consumo=[], total=0, tipo="consumo", consulta_fallida=False)
         api = self.api()
         try:
             context["router"] = self._normalize_router(api.get(f"routers/{router_id}/"))
@@ -168,6 +168,9 @@ class RouterConsumoView(AuthenticatedAPIViewMixin, TemplateView):
             ]
             context["total"] = consumo.get("total_colas", len(context["consumo"])) if isinstance(consumo, dict) else 0
         except Exception as exc:
+            # Sin inventar una lista vacía: la plantilla distingue "no hay
+            # colas" de "no se pudo consultar el router".
+            context["consulta_fallida"] = True
             context["api_error"] = str(exc)
             self.api_error(self.request, exc)
         return context
@@ -178,7 +181,7 @@ class RouterLeasesView(AuthenticatedAPIViewMixin, TemplateView):
 
     def get_context_data(self, router_id, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(router_id=router_id, router={}, leases=[], total=0, tipo="leases")
+        context.update(router_id=router_id, router={}, leases=[], total=0, tipo="leases", consulta_fallida=False)
         api = self.api()
         try:
             context["router"] = self._normalize_router(api.get(f"routers/{router_id}/"))
@@ -194,6 +197,7 @@ class RouterLeasesView(AuthenticatedAPIViewMixin, TemplateView):
             ]
             context["total"] = leases.get("total", len(context["leases"])) if isinstance(leases, dict) else 0
         except Exception as exc:
+            context["consulta_fallida"] = True
             context["api_error"] = str(exc)
             self.api_error(self.request, exc)
         return context
