@@ -12,9 +12,21 @@ La sincronización se hace por router: `POST /api/routers/{id}/sincronizar/`, de
 
 ## Planes: qué envía el formulario
 
-El formulario de plan envía `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router` y `cola_padre`. La cola padre es un desplegable alimentado por `GET /api/routers/{id}/colas/`; si se deja vacía, la API genera una cola padre llamada `Plan-{nombre_perfil}`.
+El formulario de plan envía `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre`, `direccion_local` y `pool_remoto`. Los tres últimos son desplegables por router: la cola padre por `GET /api/routers/{id}/colas/`, la dirección local por `GET /api/routers/{id}/direcciones-ip/` (se guarda la IP sin máscara, normalmente la del loopback) y el pool remoto por `GET /api/routers/{id}/pools/` (se guarda el nombre del pool). Si se deja vacía la cola padre, la API genera una cola padre llamada `Plan-{nombre_perfil}`; si se dejan vacíos la dirección local o el pool, la API no toca el valor que ya tenga el perfil. Si un catálogo falla o el router no tiene valores, el campo queda vacío y opcional y el formulario avisa de que no se pudo cargar, en vez de romperse. Ver [Contrato con la API](contrato-api.md).
 
-Los campos `direccion_local` (IP del loopback) y `pool_remoto` (nombre del pool) de la API **no** están en el formulario web: solo se pueden poner por la API directamente, en el admin de la API o importándolos con la sincronización desde un perfil ya creado en el router. Ver [Contrato con la API](contrato-api.md).
+Ejemplo de alta de plan:
+
+```json
+{
+  "nombre_perfil": "Plan 10M",
+  "cola_padre": "Plan-10M",
+  "direccion_local": "10.1.1.1",
+  "pool_remoto": "pool-pppoe",
+  "subida_mbps": 10,
+  "bajada_mbps": 10,
+  "router": 3
+}
+```
 
 ## Contrato enviado a la API
 
@@ -77,4 +89,4 @@ python manage.py check
 python manage.py makemigrations --check --dry-run
 ```
 
-La suite tiene 51 tests; 1 fallo preexistente y ajeno a la documentación: `test_create_invoice`, dependiente de la fecha.
+La suite tiene 63 tests; 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main).
