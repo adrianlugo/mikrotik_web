@@ -109,7 +109,23 @@ Las vistas operativas requieren iniciar sesión en la interfaz: sin token en ses
 
 El rol que se guarda en sesión es solo informativo: el endpoint de token de la API devuelve solo `{"token": "..."}`, sin usuario ni rol, así que la web siempre guarda `Rol administrado por la API`. Quien aplica los roles (Administrador, Técnico, Solo lectura) es la API; la web no restringe páginas por rol.
 
-Al cerrar sesión (`/web/logout/`, POST), la web intenta revocar el token DRF en la API (`POST /api/token/revocar/`, y como alternativa `POST /api/logout/`). La API aún no tiene endpoint de revocación (lo está añadiendo otro trabajo en paralelo): si responde 404/405, la web solo limpia la sesión local y el cierre de sesión funciona igual; el token seguiría valiendo en la API hasta que ese endpoint exista. Si la API termina usando otra ruta, basta con cambiar `RUTAS_REVOCACION_TOKEN` en `api_client.py`.
+Al cerrar sesión (`/web/logout/`, POST), la web revoca el token DRF en la API (`POST /api/token/revocar/`, y como alternativa `POST /api/logout/`). Si la API responde 404/405 en esas rutas (una API anterior a ese endpoint), la web solo limpia la sesión local y el cierre de sesión funciona igual. Si la API usa otra ruta, basta con cambiar `RUTAS_REVOCACION_TOKEN` en `api_client.py`.
+
+## Cómo se muestran los errores
+
+Al usuario solo le llegan mensajes cortos en español, sin detalles internos (nada de inglés, rutas, puertos ni trazas: eso queda en el registro, `logs/django.log`). La traducción de código a mensaje vive en `mikrotik_web_app/errores.py` (`mensaje_usuario()`); el cliente de la API (`api_client.py`) ya entrega el error limpio y traducido, y las vistas nunca muestran el texto crudo de la excepción.
+
+| Lo que pasa | Qué ve el usuario |
+|---|---|
+| La API no está corriendo o no responde | "No se pudo conectar con la API. Revisa que la API esté corriendo e inténtalo de nuevo." |
+| La API no pudo hablar con el router (502/503/504) | "La API no pudo hablar con el router (o la API no responde ahora mismo). Inténtalo de nuevo en unos minutos; si sigue fallando, revisa que la API esté corriendo y que el router tenga corriente y red." Las listas y contadores muestran "No disponible" / "—", nunca un 0 inventado. |
+| Sesión caducada / token inválido (401) | "Tu sesión caducó. Inicia sesión de nuevo." La sesión se limpia y la web redirige a `/web/login/`. |
+| Sin permiso (403) | "No tienes permiso para hacer eso. Si crees que es un error, pide a un administrador que revise tu usuario en la API." La sesión se mantiene. |
+| Algo que ya no existe (404) | "Eso ya no existe en la API: puede que se haya eliminado. Vuelve a cargar la página e inténtalo de nuevo." |
+| Datos no válidos (400) | El error de validación en español (los mensajes habituales de DRF se traducen, por ejemplo "This field is required." → "Este campo es obligatorio."). El formulario se vuelve a mostrar con los datos enviados y dice qué corregir. |
+| Error propio de la web (500) o página inexistente (404) | Páginas amigables `templates/500.html` y `templates/404.html`, con un enlace para volver al inicio. |
+
+Además: un valor no numérico en una velocidad, un puerto o un monto ya no se convierte en silencio en 0 (antes un plan con subida "abc" se guardaba en 0 Mbps y una factura con monto "abc" en 0.00); el formulario dice qué corregir antes de enviar nada. Y si un catálogo del formulario de plan falla con 404, el aviso dice que el endpoint no existe en esa versión de la API, no que el router no tenga valores.
 
 ## Rutas web
 
@@ -165,7 +181,7 @@ Ver [Contrato con la API](docs/contrato-api.md) para la lista completa de endpoi
 
 Resumen:
 
-- Planes: `GET/POST /api/planes/`, con `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre`, `direccion_local` y `pool_remoto`. Los tres últimos son desplegables por router: `cola_padre` por `GET /api/routers/{id}/colas/`, `direccion_local` por `GET /api/routers/{id}/direcciones-ip/` (se guarda la IP, no la interfaz) y `pool_remoto` por `GET /api/routers/{id}/pools/` (se guarda el nombre del pool). Los tres son opcionales: vacíos, `cola_padre` hace que la API genere `Plan-{perfil}`, y `direccion_local`/`pool_remoto` hacen que la API no toque el valor que ya tenga el perfil. Si un catálogo falla (por ejemplo 502 con el router sin respuesta), el formulario avisa y sigue funcionando con ese campo vacío.
+- Planes: `GET/POST /api/planes/`, con `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre`, `direccion_local` y `pool_remoto`. Los tres últimos son desplegables por router: `cola_padre` por `GET /api/routers/{id}/colas/`, `direccion_local` por `GET /api/routers/{id}/direcciones-ip/` (se guarda la IP, no la interfaz) y `pool_remoto` por `GET /api/routers/{id}/pools/` (se guarda el nombre del pool). Los tres son opcionales: vacíos, `cola_padre` deja el plan sin cola padre (la API ya no genera `Plan-{perfil}`), y `direccion_local`/`pool_remoto` hacen que la API no toque el valor que ya tenga el perfil. Si un catálogo falla (por ejemplo 502 con el router sin respuesta), el formulario avisa y sigue funcionando con ese campo vacío.
 - Clientes PPPoE: `GET/POST /api/clientes-pppoe/`, estado, ping y desconexión.
 - Clientes DHCP/IP fija: `GET/POST /api/clientes-red/`, con su cola y reparación.
 - Routers: CRUD y acciones `verificar-conexion`, `sincronizar`, `reparar-colas`, `consumo` y `dhcp-leases`.
@@ -207,9 +223,11 @@ python manage.py runserver 8001
 
 ## Problemas conocidos (no corregidos en este cambio)
 
-- La suite tiene 63 tests; 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main). El workflow de CI (`check` + tests en cada PR) sale en rojo por ese test hasta que se arregle aparte.
-- La revocación del token al cerrar sesión queda pendiente de la API: la web ya intenta `POST /api/token/revocar/` (o `POST /api/logout/`) y tolera que no exista, pero mientras la API no tenga ese endpoint el token sigue valiendo después de cerrar sesión.
+- La suite pasa a 82 tests (19 nuevos en `mikrotik_web_app/tests/test_errores.py`); 1 fallo preexistente y ajeno a este cambio: `test_create_invoice`, dependiente de la fecha (también falla en main). El workflow de CI (`check` + tests en cada PR) sale en rojo por ese test hasta que se arregle aparte. Este cambio no se pudo verificar por ejecución en local por control de riesgo: hay que correr `manage.py check` y `manage.py test` antes de mezclar.
 - La cola padre capa el total del plan a la velocidad del plan: `asegurar_cola_padre()` en la API pone a la cola padre el mismo límite del plan. Falta decidir el total del proveedor y si hay una cola global o una por plan. Sin cambiar la lógica, solo documentado.
+- Si varias listas del dashboard fallan a la vez, el mismo mensaje de error se repite una vez por lista (no se deduplica).
+- `get_list()` devuelve `[]` en silencio si la API trae una respuesta con una forma inesperada (ni lista ni `{"results"/"items"/"data": [...]}`): en ese caso la página diría "No hay..." sin avisar de que la respuesta no se entendió.
+- El alta rápida del dashboard (`DashboardIndexView.post`) no tiene formulario en las plantillas y al fallar redirige perdiendo la selección: es código heredado sin uso visible.
 - Todo se validó con mocks, nunca contra un router real con clientes de verdad.
 
 ## Estructura futura
