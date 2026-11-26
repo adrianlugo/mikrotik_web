@@ -183,6 +183,8 @@ class PPPoEViewsTestCase(TestCase):
             {
                 "nombre_perfil": "Plan 30M",
                 "cola_padre": "Plan-30M",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
                 "subida_mbps": "30",
                 "bajada_mbps": "30",
                 "router": "4",
@@ -195,11 +197,61 @@ class PPPoEViewsTestCase(TestCase):
             {
                 "nombre_perfil": "Plan 30M",
                 "cola_padre": "Plan-30M",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
                 "subida_mbps": 30,
                 "bajada_mbps": 30,
                 "router": 4,
             },
         )
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post")
+    def test_create_plan_with_direccion_and_pool(self, post):
+        response = self.client.post(
+            reverse("plan_crear"),
+            {
+                "nombre_perfil": "Plan 10M",
+                "cola_padre": "",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
+                "subida_mbps": "10",
+                "bajada_mbps": "10",
+                "router": "4",
+            },
+        )
+
+        self.assertRedirects(response, reverse("planes_list"), fetch_redirect_response=False)
+        post.assert_called_once_with(
+            "planes/",
+            {
+                "nombre_perfil": "Plan 10M",
+                "cola_padre": "",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
+                "subida_mbps": 10,
+                "bajada_mbps": 10,
+                "router": 4,
+            },
+        )
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post")
+    def test_create_plan_with_invalid_direccion_local(self, post):
+        response = self.client.post(
+            reverse("plan_crear"),
+            {
+                "nombre_perfil": "Plan 10M",
+                "cola_padre": "",
+                "direccion_local": "no-es-una-ip",
+                "pool_remoto": "",
+                "subida_mbps": "10",
+                "bajada_mbps": "10",
+                "router": "4",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "direcci\u00f3n IP local v\u00e1lida")
+        post.assert_not_called()
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
         {"id": 4, "nombre": "CHR Principal", "ip_address": "192.168.88.1"},
@@ -211,12 +263,20 @@ class PPPoEViewsTestCase(TestCase):
                 "id": 8,
                 "nombre_perfil": "Plan 20M",
                 "cola_padre": "Plan-20M",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
                 "subida_mbps": 20,
                 "bajada_mbps": 20,
                 "router": 4,
             },
             {"router": "CHR Principal", "total": 1, "colas": [
                 {"nombre": "Plan-20M", "target": "", "max-limit": "20M/20M", "parent": "none"},
+            ]},
+            {"router": "CHR Principal", "total": 1, "direcciones": [
+                {"interfaz": "loopback", "direccion": "10.1.1.1", "direccion_con_mascara": "10.1.1.1/32", "red": "10.1.1.1"},
+            ]},
+            {"router": "CHR Principal", "total": 1, "pools": [
+                {"nombre": "pool-pppoe", "rangos": "10.2.0.0-10.2.0.254"},
             ]},
         ]
 
@@ -229,9 +289,17 @@ class PPPoEViewsTestCase(TestCase):
         # opción de generarla automáticamente; la guardada queda elegida.
         self.assertContains(response, "Plan-20M")
         self.assertContains(response, "Generar autom")
+        # La dirección local y el pool guardados también quedan elegidos.
+        self.assertContains(response, "10.1.1.1")
+        self.assertContains(response, "pool-pppoe")
         self.assertEqual(
             [call.args[0] for call in get.call_args_list],
-            ["planes/8/", "routers/4/colas/"],
+            [
+                "planes/8/",
+                "routers/4/colas/",
+                "routers/4/direcciones-ip/",
+                "routers/4/pools/",
+            ],
         )
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
@@ -239,10 +307,18 @@ class PPPoEViewsTestCase(TestCase):
     ])
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
     def test_create_plan_page_shows_colas_select(self, get, get_list):
-        get.return_value = {"router": "CHR Principal", "total": 2, "colas": [
-            {"nombre": "Plan-3mb", "target": "10.0.0.0/24", "max-limit": "3M/3M", "parent": "none"},
-            {"nombre": "Cola-Total", "target": "", "max-limit": "50M/50M", "parent": "none"},
-        ]}
+        get.side_effect = [
+            {"router": "CHR Principal", "total": 2, "colas": [
+                {"nombre": "Plan-3mb", "target": "10.0.0.0/24", "max-limit": "3M/3M", "parent": "none"},
+                {"nombre": "Cola-Total", "target": "", "max-limit": "50M/50M", "parent": "none"},
+            ]},
+            {"router": "CHR Principal", "total": 1, "direcciones": [
+                {"interfaz": "loopback", "direccion": "10.1.1.1", "direccion_con_mascara": "10.1.1.1/32", "red": "10.1.1.1"},
+            ]},
+            {"router": "CHR Principal", "total": 1, "pools": [
+                {"nombre": "pool-pppoe", "rangos": "10.2.0.0-10.2.0.254"},
+            ]},
+        ]
 
         response = self.client.get(reverse("plan_crear"))
 
@@ -250,21 +326,56 @@ class PPPoEViewsTestCase(TestCase):
         self.assertContains(response, "Nuevo plan de internet")
         self.assertContains(response, "Plan-3mb")
         self.assertContains(response, "Cola-Total")
+        self.assertContains(response, "10.1.1.1")
+        self.assertContains(response, "pool-pppoe")
         self.assertContains(response, "Generar autom")
-        get.assert_called_once_with("routers/4/colas/")
+        self.assertEqual(
+            [call.args[0] for call in get.call_args_list],
+            [
+                "routers/4/colas/",
+                "routers/4/direcciones-ip/",
+                "routers/4/pools/",
+            ],
+        )
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
         {"id": 4, "nombre": "CHR Principal", "ip_address": "192.168.88.1"},
     ])
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get", side_effect=Exception("API sin endpoint de colas"))
     def test_create_plan_page_works_without_colas_endpoint(self, get, get_list):
-        # Si la API es anterior al endpoint de colas (o no responde), el
-        # formulario sigue funcionando: solo queda la opción automática.
+        # Si la API es anterior a los endpoints de catálogos (o no responde),
+        # el formulario sigue funcionando: solo quedan las opciones vacías y
+        # se avisa de que no se pudieron cargar.
         response = self.client.get(reverse("plan_crear"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Generar autom")
+        self.assertContains(response, "No se pudieron cargar")
         self.assertNotContains(response, "Plan-3mb")
+
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[
+        {"id": 4, "nombre": "CHR Principal", "ip_address": "192.168.88.1"},
+    ])
+    @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get")
+    def test_create_plan_page_works_when_only_pools_fail(self, get, get_list):
+        # Si solo falla un catálogo (por ejemplo 502 en pools), los demás
+        # desplegables cargan igual y se avisa solo del que falló.
+        get.side_effect = [
+            {"router": "CHR Principal", "total": 1, "colas": [
+                {"nombre": "Plan-3mb", "target": "", "max-limit": "3M/3M", "parent": "none"},
+            ]},
+            {"router": "CHR Principal", "total": 1, "direcciones": [
+                {"interfaz": "loopback", "direccion": "10.1.1.1", "direccion_con_mascara": "10.1.1.1/32", "red": "10.1.1.1"},
+            ]},
+            Exception("El router no responde (502)"),
+        ]
+
+        response = self.client.get(reverse("plan_crear"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Plan-3mb")
+        self.assertContains(response, "10.1.1.1")
+        self.assertContains(response, "no se pudieron cargar pools")
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post")
     def test_create_plan_without_cola_padre_posts_empty(self, post):
@@ -285,6 +396,8 @@ class PPPoEViewsTestCase(TestCase):
             {
                 "nombre_perfil": "Plan 30M",
                 "cola_padre": "",
+                "direccion_local": None,
+                "pool_remoto": "",
                 "subida_mbps": 30,
                 "bajada_mbps": 30,
                 "router": 4,
@@ -298,6 +411,8 @@ class PPPoEViewsTestCase(TestCase):
             {
                 "nombre_perfil": "Plan 40M",
                 "cola_padre": "Plan-40M",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
                 "subida_mbps": "40",
                 "bajada_mbps": "40",
                 "router": "4",
@@ -310,6 +425,8 @@ class PPPoEViewsTestCase(TestCase):
             {
                 "nombre_perfil": "Plan 40M",
                 "cola_padre": "Plan-40M",
+                "direccion_local": "10.1.1.1",
+                "pool_remoto": "pool-pppoe",
                 "subida_mbps": 40,
                 "bajada_mbps": 40,
                 "router": 4,
