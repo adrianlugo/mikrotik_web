@@ -32,7 +32,10 @@
 
         <label class="text-sm font-medium text-gray-700 md:col-span-2">
             Cola padre en RouterOS
-            <input type="text" name="cola_padre" maxlength="100" value="{{ form_data.cola_padre }}" placeholder="Plan-10M (opcional)" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+            <select name="cola_padre" id="id_cola_padre" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
+                <option value="">Generar automáticamente (Plan-{perfil})</option>
+            </select>
+            <span class="mt-1 block text-xs text-gray-500">Elige una cola simple del router elegido. Si la dejas vacía, la API crea una cola padre llamada Plan-{nombre del perfil}.</span>
         </label>
 
         <label class="text-sm font-medium text-gray-700 md:col-span-2">
@@ -53,4 +56,69 @@
         </div>
     </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ colas_por_router|json_script:"colas-por-router" }}
+<script>
+(function () {
+    var datos = {};
+    try {
+        datos = JSON.parse(document.getElementById("colas-por-router").textContent || "{}") || {};
+    } catch (e) {
+        datos = {};
+    }
+    var routerSelect = document.querySelector('select[name="router"]');
+    var colaSelect = document.getElementById("id_cola_padre");
+    if (!routerSelect || !colaSelect) {
+        return;
+    }
+    var seleccionada = "{{ form_data.cola_padre|default:''|escapejs }}";
+    function etiqueta(cola) {
+        var texto = cola.nombre || "";
+        if (cola.max_limit) {
+            texto += " — " + cola.max_limit;
+        }
+        if (cola.target) {
+            texto += " (" + cola.target + ")";
+        }
+        return texto;
+    }
+    function rellenar() {
+        var colas = datos[routerSelect.value] || datos[String(routerSelect.value)] || [];
+        var actual = colaSelect.value || seleccionada;
+        colaSelect.innerHTML = "";
+        var auto = document.createElement("option");
+        auto.value = "";
+        auto.textContent = "Generar automáticamente (Plan-{perfil})";
+        colaSelect.appendChild(auto);
+        var presente = false;
+        colas.forEach(function (cola) {
+            if (!cola.nombre) {
+                return;
+            }
+            var opcion = document.createElement("option");
+            opcion.value = cola.nombre;
+            opcion.textContent = etiqueta(cola);
+            if (cola.nombre === actual) {
+                opcion.selected = true;
+                presente = true;
+            }
+            colaSelect.appendChild(opcion);
+        });
+        if (actual && !presente) {
+            var extra = document.createElement("option");
+            extra.value = actual;
+            extra.textContent = actual + " (no está en el router)";
+            extra.selected = true;
+            colaSelect.appendChild(extra);
+        }
+        if (!actual) {
+            colaSelect.value = "";
+        }
+    }
+    routerSelect.addEventListener("change", rellenar);
+    rellenar();
+})();
+</script>
 {% endblock %}
