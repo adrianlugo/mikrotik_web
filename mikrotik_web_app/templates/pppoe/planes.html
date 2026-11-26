@@ -32,6 +32,10 @@
         <dl class="mt-4 rounded-md bg-slate-50 px-3 py-2 text-xs text-gray-500">
             <dt class="uppercase text-gray-400">Cola padre</dt>
             <dd class="mt-1 font-mono text-gray-700">{{ plan.cola_padre|default:"Se generará al guardar" }}</dd>
+            <dt class="mt-2 uppercase text-gray-400">Dirección local</dt>
+            <dd class="mt-1 font-mono text-gray-700">{{ plan.direccion_local|default:"—" }}</dd>
+            <dt class="mt-2 uppercase text-gray-400">Pool remoto</dt>
+            <dd class="mt-1 font-mono text-gray-700">{{ plan.pool_remoto|default:"—" }}</dd>
         </dl>
         <div class="mt-5 flex gap-2 border-t border-gray-100 pt-4">
             <a href="{% url 'plan_editar' plan.id %}" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Editar</a>
