@@ -1,6 +1,8 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
+from ..api_client import APIError
+from ..errores import MENSAJE_API_CAIDA, mensaje_usuario
 from ..mixins import APIViewMixin
 from ..utils import clear_api_session
 
@@ -22,16 +24,23 @@ class LoginView(APIViewMixin, TemplateView):
 
         try:
             response = self.api(request=request).login(username, password)
-        except Exception as exc:
-            # Intentamos extraer el mensaje real del error de la API
-            error_msg = str(exc)
-            
-            if "Unable to log in with provided credentials" in error_msg or "400" in error_msg:
+        except APIError as exc:
+            # El mensaje depende del código, no del texto del error (antes
+            # se adivinaba buscando "Unable to log in..." o "400" en el
+            # texto: un 500 de la API se mostraba como "No se pudo
+            # conectar", y cualquier 400 como credenciales incorrectas).
+            # 400 del login = credenciales incorrectas; el resto, el
+            # mensaje llano según el código.
+            if exc.status_code == 400:
                 user_message = "El usuario o la contraseña son incorrectos."
             else:
-                user_message = "No se pudo conectar con el servidor de la API."
-                
+                user_message = mensaje_usuario(exc)
             messages.error(request, user_message)
+            return redirect("login")
+        except Exception:
+            # Un fallo que no es de la API (por ejemplo, la web sin red):
+            # genérico, sin exponer el detalle.
+            messages.error(request, MENSAJE_API_CAIDA)
             return redirect("login")
 
         token = response.get("token") or response.get("key")
@@ -54,9 +63,10 @@ class LoginView(APIViewMixin, TemplateView):
 class LogoutView(APIViewMixin, View):
     def post(self, request, *args, **kwargs):
         # Mejor esfuerzo: si la API ya permite revocar el token, se revoca
-        # para que no siga valiendo después de cerrar sesión. Si la API aún
-        # no tiene ese endpoint (404/405) o no responde, se cierra la sesión
-        # local igualmente: el cierre de sesión nunca debe fallar por eso.
+        # para que no siga valiendo después de cerrar sesión. Si la API
+        # responde 404/405 en las rutas candidatas o no responde, se cierra
+        # la sesión local igualmente: el cierre de sesión nunca debe fallar
+        # por eso.
         if request.session.get("mikrotik_api_token"):
             try:
                 self.api(request=request).revocar_token()

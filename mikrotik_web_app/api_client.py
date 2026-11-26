@@ -1,11 +1,75 @@
+import logging
+
 import requests
 from django.conf import settings
+
+from .errores import traducir_mensaje_drf
+
+logger = logging.getLogger(__name__)
 
 
 class APIError(Exception):
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class SesionCaducada(APIError):
+    """La API devolvió 401: el token ya no vale.
+
+    La levanta `api_error()` en vez de mostrar el error en la página: quien
+    la recoge redirige a login con el mensaje de sesión caducada.
+    """
+
+    def __init__(self, message="Tu sesión caducó. Inicia sesión de nuevo."):
+        super().__init__(message, status_code=401)
+
+
+def _aplanar_errores(error_data):
+    """Convierte el cuerpo de error de la API en una lista de mensajes.
+
+    DRF devuelve dicts como {"campo": ["mensaje", ...]} o
+    {"non_field_errors": [...]}, y a veces {"detail": "..."}. Se aplana a
+    texto, se traduce lo conocido y nunca se muestra el dict tal cual
+    (antes el login mostraba el dict entero, llaves incluidas).
+    """
+    mensajes = []
+    if isinstance(error_data, dict):
+        for campo, errs in error_data.items():
+            if isinstance(errs, dict):
+                for subcampo, suberrs in errs.items():
+                    mensajes.extend(_aplanar_errores({f"{campo}.{subcampo}": suberrs}))
+                continue
+            if not isinstance(errs, list):
+                errs = [errs]
+            texto = " ".join(traducir_mensaje_drf(e) for e in errs)
+            if campo in ("detail", "non_field_errors"):
+                mensajes.append(texto)
+            else:
+                mensajes.append(f"{campo}: {texto}")
+        return mensajes
+    if isinstance(error_data, list):
+        for item in error_data:
+            mensajes.extend(_aplanar_errores(item))
+        return mensajes
+    texto = str(error_data).strip()
+    return [traducir_mensaje_drf(texto)] if texto else []
+
+
+def _detalle_error(response):
+    """Texto limpio del error de una respuesta HTTP de la API.
+
+    Sin códigos ni detalles internos: el mensaje que se muestra al usuario
+    es este; el detalle técnico queda en el registro (ver logger).
+    """
+    try:
+        error_data = response.json()
+    except ValueError:
+        error_data = response.text.strip() or response.reason
+    mensajes = _aplanar_errores(error_data)
+    if mensajes:
+        return " | ".join(mensajes)
+    return f"La API respondió {response.status_code}."
 
 
 class MikrotikAPIClient:
@@ -44,7 +108,10 @@ class MikrotikAPIClient:
                 **kwargs,
             )
         except requests.RequestException as exc:
-            raise APIError(f"No se pudo conectar con la API: {exc}") from exc
+            # El texto crudo de requests (host, puerto, "Max retries...") es
+            # técnico y en inglés: solo va al registro, no al usuario.
+            logger.warning("No se pudo conectar con la API (%s %s): %s", method, path, exc)
+            raise APIError("No se pudo conectar con la API.") from exc
 
         # 3. REINTENTO AUTOMÁTICO: Si da 401 (Unauthorized) y tenemos credenciales, reautenticar una vez
         if response.status_code == 401 and self.username and self.password and not self._authentication_attempted:
@@ -58,43 +125,36 @@ class MikrotikAPIClient:
                     **kwargs,
                 )
             except requests.RequestException as exc:
-                raise APIError(f"No se pudo conectar con la API tras reautenticar: {exc}") from exc
+                logger.warning(
+                    "No se pudo conectar con la API tras reautenticar (%s %s): %s",
+                    method,
+                    path,
+                    exc,
+                )
+                raise APIError("No se pudo conectar con la API.") from exc
 
         # 4. Manejo de errores HTTP
         if response.status_code >= 400:
-            try:
-                error_data = response.json()
-            except ValueError:
-                error_data = response.text.strip() or response.reason
-
-            # Si la API devuelve un diccionario de errores (ej. por campos)
-            if isinstance(error_data, dict):
-                mensajes = []
-                for campo, errs in error_data.items():
-                    if isinstance(errs, list):
-                        err_str = " ".join(str(e) for e in errs)
-                    else:
-                        err_str = str(errs)
-                    # Si la clave es 'detail', lo mostramos directo; si no, indicamos el campo
-                    if campo == "detail":
-                        mensajes.append(err_str)
-                    else:
-                        mensajes.append(f"{campo}: {err_str}")
-                detail = " | ".join(mensajes) if mensajes else str(error_data)
-            else:
-                detail = str(error_data)
-
+            detalle = _detalle_error(response)
+            logger.warning(
+                "La API respondió %s en %s %s: %s",
+                response.status_code,
+                method,
+                path,
+                detalle,
+            )
             raise APIError(
-                detail,  # Devolvemos directamente el texto limpio sin el "La API respondió 400:"
+                detalle,
                 status_code=response.status_code,
             )
 
         if response.status_code == 204:
             return None
-            
+
         try:
             return response.json()
         except ValueError as exc:
+            logger.warning("La API devolvió una respuesta que no es JSON en %s %s.", method, path)
             raise APIError("La API devolvió una respuesta que no es JSON.") from exc
 
     def _authenticate(self):
@@ -111,15 +171,14 @@ class MikrotikAPIClient:
                 json={"username": username, "password": password},
             )
         except requests.RequestException as exc:
-            raise APIError(f"No se pudo autenticar con la API: {exc}") from exc
+            logger.warning("No se pudo conectar con la API al iniciar sesión: %s", exc)
+            raise APIError("No se pudo conectar con la API.") from exc
 
         if response.status_code >= 400:
-            try:
-                detail = response.json()
-            except ValueError:
-                detail = response.text.strip() or response.reason
+            detalle = _detalle_error(response)
+            logger.warning("La autenticación de la API falló (%s): %s", response.status_code, detalle)
             raise APIError(
-                f"La autenticación de la API falló ({response.status_code}): {detail}",
+                detalle,
                 status_code=response.status_code,
             )
 
@@ -144,12 +203,13 @@ class MikrotikAPIClient:
                     return data[key]
         return []
 
-    # Rutas candidatas para revocar el token DRF, en orden. La API aún no
-    # tiene endpoint de revocación (lo está añadiendo otro trabajo en
-    # paralelo): si responde 404/405 en todas, se devuelve False y quien
-    # llama solo limpia la sesión local. Si la API termina usando otra
-    # ruta, basta con cambiar esta tupla. Un 401 significa que el token
-    # ya no vale, así que también cuenta como revocado.
+    # Rutas candidatas para revocar el token DRF, en orden. La API ya tiene
+    # POST /api/token/revocar/ (desde su preparación para producción); se
+    # mantiene POST /api/logout/ como alternativa por compatibilidad. Si la
+    # API responde 404/405 en todas, se devuelve False y quien llama solo
+    # limpia la sesión local. Si la API termina usando otra ruta, basta con
+    # cambiar esta tupla. Un 401 significa que el token ya no vale, así que
+    # también cuenta como revocado.
     RUTAS_REVOCACION_TOKEN = ("token/revocar/", "logout/")
 
     def revocar_token(self):

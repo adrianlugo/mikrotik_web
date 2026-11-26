@@ -1,11 +1,16 @@
+import logging
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from ipaddress import ip_address
 
 from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
-from .api_client import MikrotikAPIClient
+from .api_client import APIError, MikrotikAPIClient, SesionCaducada
+from .errores import MENSAJE_SESION_CADUCADA, mensaje_usuario
 from .utils import _decimal, clear_api_session, _related_id, _related_form_id
+
+logger = logging.getLogger(__name__)
 
 
 class APIViewMixin:
@@ -66,9 +71,26 @@ class APIViewMixin:
         return MikrotikAPIClient(token=token)
 
     def api_error(self, request, exc):
+        """Muestra el error de la API en español llano.
+
+        El usuario solo ve el mensaje de `errores.mensaje_usuario()`: corto,
+        en español y sin detalles internos (el detalle técnico ya quedó en
+        el registro, logs/django.log, en el cliente de la API). Un error que
+        no es de la API (un fallo propio de la web) sí se registra aquí con
+        su traza, porque si no no quedaría en ningún sitio.
+
+        Si la sesión caducó (401), limpia la sesión y levanta
+        SesionCaducada: quien la recoge redirige a login con el mensaje de
+        sesión caducada, en vez de dejar la página cargada con listas
+        vacías y un mensaje críptico.
+        """
         if getattr(exc, "status_code", None) == 401:
             clear_api_session(request)
-        messages.error(request, str(exc))
+            messages.error(request, MENSAJE_SESION_CADUCADA)
+            raise SesionCaducada() from exc
+        if not hasattr(exc, "status_code"):
+            logger.exception("Error inesperado en la web: %s", exc)
+        messages.error(request, mensaje_usuario(exc))
 
 
 class AuthenticatedAPIViewMixin(APIViewMixin):
@@ -80,8 +102,20 @@ class AuthenticatedAPIViewMixin(APIViewMixin):
         has_session_token = bool(request.session.get("mikrotik_api_token"))
 
         if not (has_configured_token or has_configured_credentials or has_session_token):
+            messages.info(request, "Inicia sesión para continuar.")
             return redirect("login")
-        return super().dispatch(request, *args, **kwargs)
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except SesionCaducada:
+            # api_error() ya limpió la sesión y dejó el mensaje.
+            return redirect("login")
+        except APIError as exc:
+            if getattr(exc, "status_code", None) == 401:
+                # Un 401 que no pasó por api_error(): el mismo trato.
+                clear_api_session(request)
+                messages.error(request, MENSAJE_SESION_CADUCADA)
+                return redirect("login")
+            raise
 
 
 class PlanFormMixin(APIViewMixin):
@@ -98,13 +132,18 @@ class PlanFormMixin(APIViewMixin):
         Devuelve (items, error): items es la lista (vacía si la API no la
         trae) y error es el mensaje si la API falló (404/502, router sin
         respuesta...), o None si fue bien. Nunca levanta excepción: que un
-        catálogo falle no debe romper el formulario.
+        catálogo falle no debe romper el formulario. El mensaje de error es
+        el de usuario (en español llano), nunca el texto crudo de la API:
+        un 404 aquí casi siempre significa que el endpoint no existe en
+        esa versión de la API, no que el router no tenga valores.
         """
         try:
             data = api.get(f"routers/{router_id}/{endpoint}/")
             items = data.get(clave) if isinstance(data, dict) else None
         except Exception as exc:
-            return [], str(exc)
+            if getattr(exc, "status_code", None) == 404:
+                return [], "el endpoint no existe en esta versión de la API"
+            return [], mensaje_usuario(exc)
         return items if isinstance(items, list) else [], None
 
     @staticmethod
@@ -123,7 +162,8 @@ class PlanFormMixin(APIViewMixin):
         Lee GET routers/{id}/colas/ de la API. Si la API no responde, el
         router no tiene colas o la API es anterior a ese endpoint, devuelve
         lista vacía para ese router: el formulario sigue funcionando y
-        dejar la cola vacía hace que la API genere Plan-{perfil}.
+        dejar la cola vacía es dejar el plan sin cola padre (la API ya no
+        auto-genera Plan-{perfil}).
         """
         return PlanFormMixin.get_catalogos_plan(api, routers)[0]["colas"]
 
@@ -206,6 +246,24 @@ class PlanFormMixin(APIViewMixin):
                 fallos.setdefault(clave, {})["pools"] = error
         return catalogos, fallos
 
+    @staticmethod
+    def _velocidad(valor, campo):
+        """Una velocidad en Mbps: entero mayor que 0, o error claro.
+
+        Antes un valor no numérico se convertía en silencio en 0 Mbps y el
+        plan se guardaba (o lo rechazaba la API con un error crudo): ahora
+        el formulario dice qué corregir antes de enviar nada.
+        """
+        try:
+            numero = int(valor)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Ingrese una velocidad de {campo} válida (un número entero)."
+            ) from None
+        if numero < 1:
+            raise ValueError(f"La velocidad de {campo} debe ser mayor que 0 Mbps.")
+        return numero
+
     def build_payload(self, data):
         # Limpieza básica de texto
         nombre = data.get("nombre_perfil", "").strip()
@@ -221,23 +279,26 @@ class PlanFormMixin(APIViewMixin):
             except ValueError:
                 raise ValueError("Ingrese una dirección IP local válida.") from None
 
-        # Conversiones básicas de tipos para que la API reciba lo que espera
+        # Conversiones de tipos para que la API reciba lo que espera. Un
+        # router no válido o una velocidad no numérica son errores del
+        # formulario, no un None o un 0 silencioso para la API.
         try:
             router = int(data["router"]) if data.get("router") else None
         except (TypeError, ValueError):
             router = None
+        if router is None:
+            raise ValueError("Seleccione un router válido.")
 
-        try:
-            subida = int(data["subida_mbps"]) if data.get("subida_mbps") else 0
-            bajada = int(data["bajada_mbps"]) if data.get("bajada_mbps") else 0
-        except (TypeError, ValueError):
-            subida, bajada = 0, 0
+        subida = self._velocidad(data.get("subida_mbps"), "subida")
+        bajada = self._velocidad(data.get("bajada_mbps"), "descarga")
 
         return {
             "nombre_perfil": nombre,
             "cola_padre": cola_padre,
-            # Vacía = None: la API no toca el local-address del perfil que
-            # ya existe en el router. El pool es texto: vacío = "".
+            # Vacía = sin cola padre: la API ya no auto-genera Plan-{perfil}.
+            # direccion_local vacía = None: la API no toca el local-address
+            # del perfil que ya existe en el router. El pool es texto:
+            # vacío = "".
             "direccion_local": direccion_local or None,
             "pool_remoto": pool_remoto,
             "subida_mbps": subida,
@@ -273,10 +334,14 @@ class RouterFormMixin(APIViewMixin):
         if not ip_address:
             raise ValueError("Ingrese la dirección IP del router.")
 
+        # Un puerto no numérico antes se convertía en silencio en 8729:
+        # ahora el formulario dice qué corregir.
         try:
             puerto_api = int(data.get("puerto_api", 8729)) if data.get("puerto_api") else 8729
         except (TypeError, ValueError):
-            puerto_api = 8729
+            raise ValueError("Ingrese un puerto de API válido (un número entre 1 y 65535).") from None
+        if not 1 <= puerto_api <= 65535:
+            raise ValueError("Ingrese un puerto de API válido (un número entre 1 y 65535).")
 
         payload = {
             "nombre": nombre,
@@ -339,9 +404,16 @@ class ClienteRedFormMixin:
             "estado": data.get("estado", "activo"),
         }
         if not partial:
+            # Sin plan o router válidos el formulario explica qué falta, en
+            # vez de romperse con un KeyError que la vista mostraba genérico.
+            try:
+                plan = int(data["plan"])
+                router = int(data["router"])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("Seleccione un plan y un router válidos.") from None
             payload.update(
-                plan=int(data["plan"]),
-                router=int(data["router"]),
+                plan=plan,
+                router=router,
             )
         return payload
 
@@ -380,7 +452,15 @@ class FacturaFormMixin(APIViewMixin):
         except (TypeError, ValueError):
             raise ValueError("Seleccione un cliente válido.") from None
 
-        monto = _decimal(data.get("monto", 0))
+        # Un monto no numérico antes se convertía en silencio en 0.00 y la
+        # factura se guardaba en 0: ahora el formulario dice qué corregir.
+        crudo_monto = data.get("monto")
+        if crudo_monto in (None, ""):
+            raise ValueError("Ingrese un monto válido.") from None
+        try:
+            monto = Decimal(str(crudo_monto).replace(",", "."))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError("Ingrese un monto válido.") from None
 
         return {
             "cliente": cliente_id,
@@ -425,7 +505,7 @@ class PagoFormMixin(APIViewMixin):
             raise ValueError("Seleccione una factura válida.") from None
 
         try:
-            monto = _decimal(data["monto"])
+            monto = _decimal(data.get("monto"))
         except (KeyError, TypeError, ValueError):
             raise ValueError("Ingrese un monto válido.") from None
         if monto <= 0:
