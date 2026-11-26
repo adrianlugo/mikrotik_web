@@ -1,6 +1,7 @@
 from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
+from django.contrib.messages import get_messages
 from django.test.client import Client
 from mikrotik_web_app.api_client import APIError
 
@@ -84,11 +85,15 @@ class DashboardViewsTestCase(TestCase):
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[])
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get", side_effect=APIError("La sesión de la API expiró.", status_code=401))
-    def test_expired_api_token_is_cleared(self, get, get_list):
+    def test_expired_api_token_redirects_to_login(self, get, get_list):
+        # El token expirado (401) limpia la sesión y redirige a login con
+        # un mensaje claro, en vez de dejar el dashboard con listas vacías.
         response = self.client.get(reverse("dashboard_index"))
 
-        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("mikrotik_api_token", self.client.session)
+        mensajes = [str(m) for m in get_messages(response.wsgi_request)]
+        self.assertIn("Tu sesión caducó. Inicia sesión de nuevo.", mensajes)
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get_list", return_value=[])
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.get", side_effect=APIError("No tiene permisos para consultar el recurso.", status_code=403))

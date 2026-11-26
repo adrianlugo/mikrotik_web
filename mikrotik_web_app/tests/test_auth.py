@@ -55,8 +55,9 @@ class AuthViewsTestCase(TestCase):
 
     @patch("mikrotik_web_app.api_client.MikrotikAPIClient.post", side_effect=APIError("No encontrado.", status_code=404))
     def test_logout_still_clears_session_when_api_has_no_revoke_endpoint(self, post):
-        # La API aún no tiene endpoint de revocación (404 en las rutas
-        # candidatas): el cierre de sesión local no debe fallar por eso.
+        # La API responde 404 en las rutas candidatas (por ejemplo, una
+        # API anterior a POST /api/token/revocar/): el cierre de sesión
+        # local no debe fallar por eso.
         session = self.client.session
         session["mikrotik_api_token"] = "token-de-prueba"
         session.save()

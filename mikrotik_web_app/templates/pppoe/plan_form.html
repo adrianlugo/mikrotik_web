@@ -44,9 +44,9 @@
         <label class="text-sm font-medium text-gray-700 md:col-span-2">
             Cola padre en RouterOS
             <select name="cola_padre" id="id_cola_padre" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2">
-                <option value="">Generar automáticamente (Plan-{perfil})</option>
+                <option value="">Sin cola padre (opcional)</option>
             </select>
-            <span class="mt-1 block text-xs text-gray-500">Elige una cola simple del router elegido. Si la dejas vacía, la API crea una cola padre llamada Plan-{nombre del perfil}.</span>
+            <span class="mt-1 block text-xs text-gray-500">Elige una cola simple del router elegido. Si la dejas vacía, el plan queda sin cola padre; la API ya no genera una automáticamente.</span>
         </label>
 
         <label class="text-sm font-medium text-gray-700">
@@ -153,7 +153,7 @@
             document.getElementById("id_cola_padre"),
             datosColas,
             "{{ form_data.cola_padre|default:''|escapejs }}",
-            "Generar automáticamente (Plan-{perfil})",
+            "Sin cola padre (opcional)",
             function (cola) {
                 var texto = cola.nombre || "";
                 if (cola.max_limit) {

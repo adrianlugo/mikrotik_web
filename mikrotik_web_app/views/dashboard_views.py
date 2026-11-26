@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
+from ..errores import mensaje_usuario
 from ..mixins import AuthenticatedAPIViewMixin
 from ..utils import _pppoe_payload
 
@@ -64,7 +65,15 @@ class DashboardIndexView(AuthenticatedAPIViewMixin, TemplateView):
                 "routers": [],
                 "conexiones": [],
                 "total_conectados": None,
-                "total_clientes": 0,
+                # Los totales empiezan en None ("no se pudo consultar"), no
+                # en 0: si una lista falla, la tarjeta muestra "—" en vez
+                # de un 0 inventado.
+                "total_clientes": None,
+                "total_plan_count": None,
+                "total_router_count": None,
+                "planes_no_disponibles": False,
+                "routers_no_disponibles": False,
+                "clientes_no_disponibles": False,
                 "router_nombre": "",
                 "activos_errores": [],
                 "activos_no_disponibles": False,
@@ -77,13 +86,18 @@ class DashboardIndexView(AuthenticatedAPIViewMixin, TemplateView):
         except Exception as exc:
             # La API falló (por ejemplo 502 con el router sin respuesta):
             # no se inventa un 0 de conectados. total_conectados queda en
-            # None y la plantilla muestra "No disponible" y el error.
+            # None y la plantilla muestra "No disponible" y el error. Si la
+            # sesión caducó (401), api_error() levanta SesionCaducada y el
+            # dispatch redirige a login: no se sigue cargando el resto.
             context["activos_no_disponibles"] = True
-            context["api_error"] = str(exc)
+            context["api_error"] = mensaje_usuario(exc)
             self.api_error(self.request, exc)
-            if getattr(exc, "status_code", None) == 401:
-                return context
 
+        fallos = {
+            "planes": "planes_no_disponibles",
+            "routers": "routers_no_disponibles",
+            "clientes": "clientes_no_disponibles",
+        }
         for key, path in (
             ("planes", "planes/"),
             ("routers", "routers/"),
@@ -93,15 +107,18 @@ class DashboardIndexView(AuthenticatedAPIViewMixin, TemplateView):
                 context[key] = api.get_list(path)
             except Exception as exc:
                 context[key] = []
+                context[fallos[key]] = True
                 self.api_error(self.request, exc)
-                if getattr(exc, "status_code", None) == 401:
-                    break
         context["planes"] = self.normalize_plans(context["planes"])
         context["routers"] = self.normalize_routers(context["routers"])
         # Total real de clientes PPPoE registrados en la API, no un 0 fijo.
-        context["total_clientes"] = len(context.get("clientes") or [])
-        context["total_plan_count"] = len(context["planes"])
-        context["total_router_count"] = len(context["routers"])
+        # Si la lista falló, queda en None ("no se pudo consultar").
+        if not context["clientes_no_disponibles"]:
+            context["total_clientes"] = len(context.get("clientes") or [])
+        if not context["planes_no_disponibles"]:
+            context["total_plan_count"] = len(context["planes"])
+        if not context["routers_no_disponibles"]:
+            context["total_router_count"] = len(context["routers"])
         return context
 
     def post(self, request, *args, **kwargs):

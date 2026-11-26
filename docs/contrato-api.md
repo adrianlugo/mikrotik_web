@@ -9,7 +9,7 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | Método | Endpoint | Uso en la web |
 |---|---|---|
 | `POST` | `/api/token/` | Inicio de sesión web. Devuelve solo `{"token": "..."}` (sin usuario ni rol). |
-| `POST` | `/api/token/revocar/` | Cierre de sesión web: intento de revocar el token. **Pendiente en la API** (lo está añadiendo otro trabajo en paralelo): si la API responde 404/405, la web solo limpia la sesión local. Como alternativa la web prueba `POST /api/logout/`. Si la API usa otra ruta, se cambia `RUTAS_REVOCACION_TOKEN` en `api_client.py`. |
+| `POST` | `/api/token/revocar/` | Cierre de sesión web: revocar el token. Si la API responde 404/405 en esa ruta (una API anterior a ese endpoint), la web solo limpia la sesión local. Como alternativa la web prueba `POST /api/logout/`. Si la API usa otra ruta, se cambia `RUTAS_REVOCACION_TOKEN` en `api_client.py`. |
 
 ## Routers
 
@@ -22,7 +22,7 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | `DELETE` | `/api/routers/{id}/` | Eliminación. |
 | `POST` | `/api/routers/{id}/verificar-conexion/` | Verificación de conexión. |
 | `POST` | `/api/routers/{id}/sincronizar/` | Sincronización de ese router. |
-| `POST` | `/api/routers/{id}/reparar-colas/` | Reparación de colas de clientes DHCP/IP fija. |
+| `POST` | `/api/routers/{id}/reparar-colas/` | Reparación de colas de clientes DHCP/IP fija. Devuelve `{"status": "success"|"partial"|"error", "colas_creadas", "colas_actualizadas", "total_clientes", "errores": [...]}`: `partial` (200) es que alguna cola falló y la web avisa en vez de darlo por hecho; `error` (fallaron todas) llega como 502. |
 | `GET` | `/api/routers/{id}/consumo/` | Consumo de colas (`router`, `total_colas`, `colas`). |
 | `GET` | `/api/routers/{id}/dhcp-leases/` | Leases DHCP. |
 | `GET` | `/api/routers/{id}/direcciones-ip/` | Desplegable de `direccion_local` en el formulario de plan. Devuelve `{"direcciones": [{"interfaz", "direccion", "direccion_con_mascara", "red"}]}`; se guarda `direccion` (la IP sin máscara). |
@@ -39,7 +39,7 @@ Base: `MIKROTIK_API_URL` (por defecto `http://localhost:8000/api`). Autenticaci�
 | `PATCH` | `/api/planes/{id}/` | Guardado de la edición. |
 | `DELETE` | `/api/planes/{id}/` | Eliminación. |
 
-Campos que envía la web: `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre` (desplegable por router; vacío = la API genera `Plan-{perfil}`), `direccion_local` (desplegable por router; vacía = `null`, la API no toca el local-address del perfil) y `pool_remoto` (desplegable por router; vacío = `""`, la API no toca el remote-address del perfil). La web valida que `direccion_local`, si se pone, sea una IP válida.
+Campos que envía la web: `nombre_perfil`, `subida_mbps`, `bajada_mbps`, `router`, `cola_padre` (desplegable por router; vacío = sin cola padre, la API ya no genera `Plan-{perfil}`), `direccion_local` (desplegable por router; vacía = `null`, la API no toca el local-address del perfil) y `pool_remoto` (desplegable por router; vacío = `""`, la API no toca el remote-address del perfil). La web valida que `direccion_local`, si se pone, sea una IP válida.
 
 ## Clientes PPPoE
 
@@ -89,12 +89,31 @@ No existen en la API `POST /api/clientes-pppoe/sincronizar/` ni `/importar-desde
 
 ## Errores honestos
 
+La API devuelve todos sus errores en un único formato (desde su PR #6, manejo de errores):
+
+```json
+{"error": "<mensaje claro en español>", "codigo": "<clave>"}
+```
+
+En los 400 de validación además trae `"detalles"` (por campo o lista). La web muestra solo `error`: `codigo` es una clave para la lógica (por ejemplo `"validacion"`, `"borrado_protegido"`, `"demasiadas_peticiones"`), nunca sale en pantalla, y `detalles` se usa para decir qué campo corregir. El formato viejo (dict por campo, `"detail"`, `"mikrotik_error"`) ya no lo emite la API, pero el cliente lo sigue entendiendo por compatibilidad.
+
 Cuando la API devuelve un error en vez de una lista (por ejemplo 502 con el router sin respuesta), la web no muestra una lista vacía ni un 0 como si todo fuera bien:
 
 - Dashboard y conexiones activas: si `GET /api/clientes-pppoe/activos/` falla, el total de conectados muestra "No disponible" y la lista dice que no se pudo consultar; si la API trae `errores`, se listan los routers que no se pudieron consultar y se avisa de que el total puede estar incompleto.
 - Formulario de plan: si un catálogo (`colas`, `direcciones-ip`, `pools`) falla, el formulario avisa qué catálogo y de qué router no cargó, y sigue funcionando con ese campo vacío y opcional.
 - Consumo y leases del router: si la consulta falla, la tabla dice que no se pudo consultar el router, no "No se encontraron...".
+- Listas (clientes, planes, routers, clientes de red, facturas, pagos): si la lista falla, el estado vacío dice que no se pudo consultar, no "No hay...".
+- Dashboard: si una lista falla, su tarjeta muestra "—" con "No se pudo consultar", nunca un 0 inventado (lo mismo que ya hacían las sesiones activas).
+- Formularios: si fallan, se vuelven a mostrar con los datos enviados (antes editar un cliente PPPoE o crear/editar un cliente de red redirigían y se perdía todo lo escrito). En un 400, el mensaje añade los `detalles` de la API para decir qué campo corregir (por ejemplo "subida_mbps: El valor debe ser mayor o igual que 0.").
+- Sesión caducada (401): la web limpia la sesión y redirige a login con "Tu sesión caducó. Inicia sesión de nuevo." Un 403 no cierra la sesión.
+- Borrado protegido (409): "No se puede eliminar porque hay registros que dependen de él."
+- Demasiadas peticiones (429): la API dice cuántos segundos esperar y la web muestra ese texto.
+- Reparar colas a medias: si `POST /api/routers/{id}/reparar-colas/` devuelve `"status": "partial"`, la web avisa con un aviso (no un éxito) y nombra los clientes que no se pudieron reparar; si fallaron todas, la API responde 502 y la web muestra el error del router.
+- Login: el mensaje depende del código, no del texto del error. Un 400 son credenciales incorrectas; la API caída dice que no se pudo conectar; un 500 de la API dice que la API devolvió un error (antes cualquier error se mostraba como "No se pudo conectar", y cualquier 400 como credenciales incorrectas).
+- Errores 500 propios de la web y páginas inexistentes (404): páginas amigables `templates/500.html` y `templates/404.html`, con enlace para volver al inicio.
+
+La correspondencia de cada código con su mensaje está en `mikrotik_web_app/errores.py` (`mensaje_usuario()`): 401 sesión caducada, 403 sin permiso, 404 ya no existe, 409 borrado protegido, 429 demasiadas peticiones, 502/503/504 router sin respuesta, sin código y fallo de conexión API caída, 400 validación en español con detalles por campo, 500 error de la API. El detalle técnico nunca llega al usuario: queda en el registro (`logs/django.log`).
 
 ## Formato de las respuestas
 
-La API no pagina: devuelve listas planas. El cliente (`get_list`) también acepta la forma paginada `{"results": [...]}`, `{"items": [...]}` o `{"data": [...]}` por si la API pagina en el futuro.
+La API pagina con 100 registros por página (`{"results": [...]}`); el cliente (`get_list`) lee la primera página, así que con más de 100 registros en un listado la web solo muestra los 100 primeros. Si la API devolviera una lista plana, el cliente también la acepta.

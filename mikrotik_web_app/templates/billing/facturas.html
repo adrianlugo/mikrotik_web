@@ -82,7 +82,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-400">No hay facturas registradas.</td>
+                    <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-400">{% if api_error %}No se pudieron consultar las facturas: la API no respondió.{% else %}No hay facturas registradas.{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

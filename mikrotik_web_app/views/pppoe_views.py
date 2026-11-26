@@ -1,8 +1,9 @@
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.views.generic import TemplateView, View
+from ..errores import mensaje_usuario
 from ..mixins import AuthenticatedAPIViewMixin, PlanFormMixin
-from ..utils import _related_id, _pppoe_payload
+from ..utils import _related_form_id, _related_id, _pppoe_payload
 
 
 def _advertencias_catalogo(routers, fallos):
@@ -38,7 +39,7 @@ class ClientesListView(AuthenticatedAPIViewMixin, TemplateView):
         try:
             context["clientes"] = self.api().get_list("clientes-pppoe/")
         except Exception as exc:
-            context.update(clientes=[], api_error=str(exc))
+            context.update(clientes=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         return context
 
@@ -53,7 +54,7 @@ class ClienteCrearView(AuthenticatedAPIViewMixin, TemplateView):
             context["routers"] = self.normalize_routers(api.get_list("routers/"))
             context["planes"] = self.normalize_plans(api.get_list("planes/"))
         except Exception as exc:
-            context.update(routers=[], planes=[], api_error=str(exc))
+            context.update(routers=[], planes=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
         context["form_data"] = kwargs.get("form_data", {})
         if kwargs.get("api_error"):
@@ -67,7 +68,7 @@ class ClienteCrearView(AuthenticatedAPIViewMixin, TemplateView):
         except Exception as exc:
             self.api_error(request, exc)
             return self.render_to_response(
-                self.get_context_data(form_data=request.POST, api_error=str(exc)),
+                self.get_context_data(form_data=request.POST, api_error=mensaje_usuario(exc)),
                 status=400,
             )
 
@@ -86,7 +87,7 @@ class ClienteCrearView(AuthenticatedAPIViewMixin, TemplateView):
         except Exception as exc:
             self.api_error(request, exc)
             return self.render_to_response(
-                self.get_context_data(form_data=request.POST, api_error=str(exc)),
+                self.get_context_data(form_data=request.POST, api_error=mensaje_usuario(exc)),
                 status=400,
             )
         return redirect("clientes_list")
@@ -102,7 +103,7 @@ class PlanesListView(AuthenticatedAPIViewMixin, TemplateView):
             planes = api.get_list("planes/")
             routers = self.normalize_routers(api.get_list("routers/"))
         except Exception as exc:
-            context.update(planes=[], api_error=str(exc))
+            context.update(planes=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
             return context
 
@@ -142,7 +143,7 @@ class PlanCrearView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
             context["direcciones_por_router"] = {}
             context["pools_por_router"] = {}
             context["catalogo_advertencias"] = []
-            context["api_error"] = str(exc)
+            context["api_error"] = mensaje_usuario(exc)
             self.api_error(self.request, exc)
         return context
 
@@ -161,7 +162,7 @@ class PlanCrearView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
         except Exception as exc:
             self.api_error(request, exc)
             context = self.get_context_data()
-            context.update(api_error=str(exc), form_data=self.normalize_form_data(request.POST.dict()))
+            context.update(api_error=mensaje_usuario(exc), form_data=self.normalize_form_data(request.POST.dict()))
             return self.render_to_response(context)
         return redirect("planes_list")
 
@@ -192,7 +193,7 @@ class PlanEditarView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
                 direcciones_por_router={},
                 pools_por_router={},
                 catalogo_advertencias=[],
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
             )
             self.api_error(self.request, exc)
         return context
@@ -212,7 +213,7 @@ class PlanEditarView(PlanFormMixin, AuthenticatedAPIViewMixin, TemplateView):
         except Exception as exc:
             self.api_error(request, exc)
             context = self.get_context_data(plan_id=plan_id)
-            context.update(api_error=str(exc), form_data=self.normalize_form_data(request.POST.dict()))
+            context.update(api_error=mensaje_usuario(exc), form_data=self.normalize_form_data(request.POST.dict()))
             return self.render_to_response(context)
         return redirect("planes_list")
 
@@ -246,7 +247,7 @@ class ConexionActivaView(AuthenticatedAPIViewMixin, TemplateView):
                 router_nombre="",
                 activos_errores=[],
                 activos_no_disponibles=True,
-                api_error=str(exc),
+                api_error=mensaje_usuario(exc),
             )
             self.api_error(self.request, exc)
         return context
@@ -283,8 +284,26 @@ class ClienteEditarView(AuthenticatedAPIViewMixin, TemplateView):
             context["planes"] = self.normalize_plans(api.get_list("planes/"))
             context["routers"] = self.normalize_routers(api.get_list("routers/"))
         except Exception as exc:
-            context.update(cliente=None, planes=[], routers=[], api_error=str(exc))
+            context.update(cliente=None, planes=[], routers=[], api_error=mensaje_usuario(exc))
             self.api_error(self.request, exc)
+        return context
+
+    def _contexto_con_datos_enviados(self, request, pk):
+        """El formulario de editar con los datos que envió el usuario.
+
+        Si la edición falla (validación o error de la API), el formulario
+        se vuelve a mostrar con lo que se escribió, en vez de redirigir y
+        perderlo todo. Si la API no responde al recargar, el cliente queda
+        con los datos enviados igualmente.
+        """
+        context = self.get_context_data(pk=pk)
+        datos = dict(context.get("cliente") or {})
+        for campo in ("nombre_completo", "usuario_pppoe", "direccion_ip_antena", "estado"):
+            if campo in request.POST:
+                datos[campo] = request.POST.get(campo)
+        context["cliente"] = datos
+        context["cliente_plan_id"] = _related_form_id(request.POST.get("plan"))
+        context["cliente_router_id"] = _related_form_id(request.POST.get("router"))
         return context
 
     def post(self, request, pk, *args, **kwargs):
@@ -293,10 +312,10 @@ class ClienteEditarView(AuthenticatedAPIViewMixin, TemplateView):
             payload = _pppoe_payload(request.POST, plans=planes, require_password=False)
         except ValueError as exc:
             messages.error(request, str(exc))
-            return redirect("cliente_editar", pk=pk)
+            return self.render_to_response(self._contexto_con_datos_enviados(request, pk))
         except Exception as exc:
             self.api_error(request, exc)
-            return redirect("cliente_editar", pk=pk)
+            return self.render_to_response(self._contexto_con_datos_enviados(request, pk))
 
         password = request.POST.get("password_pppoe", "").strip()
         if password:
@@ -309,6 +328,7 @@ class ClienteEditarView(AuthenticatedAPIViewMixin, TemplateView):
             messages.success(request, "Cliente PPPoE actualizado correctamente.")
         except Exception as exc:
             self.api_error(request, exc)
+            return self.render_to_response(self._contexto_con_datos_enviados(request, pk))
         return redirect("clientes_list")
 
 

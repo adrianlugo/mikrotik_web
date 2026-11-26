@@ -83,7 +83,7 @@
                 {% empty %}
                 <tr>
                     <td colspan="6" class="px-6 py-12 text-center text-sm text-gray-400">
-                        No hay clientes DHCP/IP fija registrados.
+                        {% if api_error %}No se pudieron consultar los clientes: la API no respondió.{% else %}No hay clientes DHCP/IP fija registrados.{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
